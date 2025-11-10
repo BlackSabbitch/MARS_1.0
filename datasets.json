@@ -1,0 +1,22 @@
+{
+  "anime_ranks": {
+    "folder": "data/anime_ranks",
+    "url": "https://www.kaggle.com/datasets/hernan4444/anime-recommendations-database",
+    "year": 2020
+  },
+  "anime_timestamps": {
+    "folder": "data/anime_timestamps",
+    "url": "https://www.kaggle.com/datasets/dbdmobile/myanimelist-dataset",
+    "year": 2023
+  },
+  "country_distribution": {
+    "folder": "data/myanimelist_countries_distribution",
+    "url": "https://www.semrush.com/analytics/organic/changes/?sortField=traffic&db=us&q=myanimelist.net&searchType=domain",
+    "year": 2025
+  },
+  "cities_population_and_location": {
+    "folder": "data/cities_population_and_location",
+    "url": "https://www.kaggle.com/datasets/donatoriccio/world-cities-population-cleaned-version",
+    "year": 2022
+  }
+}
