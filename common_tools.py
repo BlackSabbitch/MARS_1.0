@@ -19,19 +19,19 @@ class CommonTools:
             datasets = json.load(f)
         return datasets
 
-    def load_csv_files_names_from_folder(self, data_folder: str) -> list:
+    @classmethod
+    def load_csv_files_pathes(cls, config_file_path: str = "datasets.json") -> dict[str, str]:
         """Load all CSV file names from a specified folder.
         Args:
             data_folder (str): The path to the folder containing CSV files.
         Returns:
             list: A list of CSV file names found in the specified folder.
         """
-        csv_files = []
-        for entity in os.listdir(data_folder):
-            if os.path.isfile(f"{data_folder}/" + entity) and Path(entity).suffix == ".csv":
-                csv_files.append(entity)
-                print(f"[FOUND]: {entity}")
-        return csv_files
+        datasets_metadata = cls.load_json_config(config_file_path)
+        return {"anime_ranks": datasets_metadata['anime_ranks']['folder'],
+                "anime_timestamps": datasets_metadata['anime_timestamps']['folder'],
+                "cities_population_and_location": datasets_metadata['cities_population_and_location']['folder'],
+                "country_distribution": datasets_metadata['country_distribution']['folder']}
 
     @classmethod
     def load_anime_tables_from_csv(cls, config_file_path: str = "datasets.json", mode='duckdb') -> dict:
