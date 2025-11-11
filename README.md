@@ -10,6 +10,19 @@ Python scripts **expect the datasets to be already downloaded** and placed under
 
 ## Project Structure
 
+MARS_1.0/
+├── data/ # All datasets
+│ ├── anime_ranks/
+│ ├── cities_location/
+│ ├── cities_population/
+│ └── anime_timestamps/
+├── datasets.yaml # Dataset metadata
+├── common_tools.py
+├── graph_tools.py
+├── playground.ipynb
+└── README.md
+
+
 # Setup
 pip install -r requirements.txt
 kaggle.json → ~/.kaggle/

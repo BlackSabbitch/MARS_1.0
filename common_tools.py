@@ -19,6 +19,20 @@ class CommonTools:
             datasets = json.load(f)
         return datasets
 
+    def load_csv_files_names_from_folder(self, data_folder: str) -> list:
+        """Load all CSV file names from a specified folder.
+        Args:
+            data_folder (str): The path to the folder containing CSV files.
+        Returns:
+            list: A list of CSV file names found in the specified folder.
+        """
+        csv_files = []
+        for entity in os.listdir(data_folder):
+            if os.path.isfile(f"{data_folder}/" + entity) and Path(entity).suffix == ".csv":
+                csv_files.append(entity)
+                print(f"[FOUND]: {entity}")
+        return csv_files
+
     @classmethod
     def load_anime_tables_from_csv(cls, config_file_path: str = "datasets.json", mode='duckdb') -> dict:
         """Load all CSV files from a specified folder into a dictionary of data frames.
@@ -149,29 +163,32 @@ class CommonTools:
 
         countries = set(country_mal_distr['country'].tolist())
         cities_stats = cities_stats[cities_stats['country'].isin(countries)].reset_index(drop=True)
+        cities_population_sum = cities_stats['population'].sum()
+        cities_fraction = cities_stats['population'] / cities_population_sum
+        
         # 1) merge
-        cities_stats = cities_stats.merge(
-            country_mal_distr,
-            on="country",
-            how="left",
-            validate="many_to_one"   # one country → many cities
-        )
+        # cities_stats = cities_stats.merge(
+        #     country_mal_distr,
+        #     on="country",
+        #     how="left",
+        #     validate="many_to_one"   # one country → many cities
+        # )
         # 2) sum population over available cities per country
-        cities_stats["country_total_pop"] = cities_stats.groupby("country")["population"].transform("sum")
+        # cities_stats["country_total_pop"] = cities_stats.groupby("country")["population"].transform("sum")
         # 3) distribute
-        cities_stats["city_users_float"] = (
-            cities_stats["population"] / cities_stats["country_total_pop"] * cities_stats["number"]
-        )
+        # cities_stats["city_users_float"] = (
+        #     cities_stats["population"] / cities_stats["country_total_pop"] * cities_stats["number"]
+        # )
         # 4) balanced rounding
-        cities_stats = cls.fix_rounding(cities_stats)
-        cols_to_drop = ["number", "city_users_float", "population", "country_total_pop", "base", "frac", "diff", "country_total_base"]
+        # cities_stats = cls.fix_rounding(cities_stats)
+        # cols_to_drop = ["number", "city_users_float", "population", "country_total_pop", "base", "frac", "diff", "country_total_base"]
         # 5) remove temporary columns
-        cities_stats = cities_stats.drop(
-            columns=[c for c in cols_to_drop if c in cities_stats.columns],
-            errors="ignore"
-            )
+        # cities_stats = cities_stats.drop(
+        #     columns=[c for c in cols_to_drop if c in cities_stats.columns],
+        #     errors="ignore"
+        #     )
         # 6) remove cities with 0 users
-        cities_stats = cities_stats[cities_stats["city_users"] > 0]
+        # cities_stats = cities_stats[cities_stats["city_users"] > 0]
         return cities_stats
 
     @staticmethod
