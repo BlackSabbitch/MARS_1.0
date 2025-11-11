@@ -8,30 +8,33 @@ import numpy as np
 
 class CommonTools:
     @staticmethod
-    def load_json_config(file_path: str = "datasets.json") -> dict:
+    def load_json_config(config_file_path: str = "datasets.json") -> dict:
         """Parse a JSON configuration file and return its contents as a dictionary.
         Args:
             file_path (str): The path to the JSON configuration file.
         Returns:
             dict: A dictionary containing the parsed JSON configuration.
         """
-        with open("datasets.json") as f:
+        with open(config_file_path) as f:
             datasets = json.load(f)
         return datasets
 
     @classmethod
     def load_csv_files_pathes(cls, config_file_path: str = "datasets.json") -> dict[str, str]:
-        """Load all CSV file names from a specified folder.
+        """Load all CSV file paths from a specified folder into a dictionary.
         Args:
-            data_folder (str): The path to the folder containing CSV files.
+            config_file_path (str): The path to the JSON configuration file.
         Returns:
-            list: A list of CSV file names found in the specified folder.
+            dict: A dictionary where keys are file names (without extension) and values are file paths.
         """
+        files = {}
         datasets_metadata = cls.load_json_config(config_file_path)
-        return {"anime_ranks": datasets_metadata['anime_ranks']['folder'],
-                "anime_timestamps": datasets_metadata['anime_timestamps']['folder'],
-                "cities_population_and_location": datasets_metadata['cities_population_and_location']['folder'],
-                "country_distribution": datasets_metadata['country_distribution']['folder']}
+        for key, value in datasets_metadata.items():
+            folder = value['folder']
+            for entity in os.listdir(folder):
+                if os.path.isfile(f"{folder}/" + entity) and Path(entity).suffix == ".csv":
+                    files[Path(entity).stem] = f"{folder}/{entity}"
+        return files
 
     @classmethod
     def load_anime_tables_from_csv(cls, config_file_path: str = "datasets.json", mode='duckdb') -> dict:
@@ -83,7 +86,7 @@ class CommonTools:
             print(f"[DROPPED VIEW]: {view_name}")
 
     @classmethod
-    def load_country_pc_distribution_table_from_csv(cls) -> pd.DataFrame:
+    def load_country_pc_distribution_table_from_csv(cls, config_file_path: str = "datasets.json") -> pd.DataFrame:
         """Load country PC distribution data from a CSV file.
         Args:
             data_folder (str): The path to the folder containing the country PC distribution CSV file.
@@ -91,7 +94,7 @@ class CommonTools:
         Returns:
             pd.DataFrame: A data frame containing country PC distribution data.
         """
-        datasets_metadata = cls.load_json_config()
+        datasets_metadata = cls.load_json_config(config_file_path)
         data_folder = datasets_metadata['country_distribution']['folder']
         for entity in os.listdir(data_folder):
             if os.path.isfile(f"{data_folder}/" + entity) and Path(entity).suffix == ".csv":
