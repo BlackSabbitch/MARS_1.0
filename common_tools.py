@@ -4,6 +4,17 @@ from pathlib import Path
 import duckdb
 import json
 import numpy as np
+from dataclasses import dataclass
+
+
+@dataclass
+class Constants:
+    male_prob: float = 0.722
+    female_prob: float = 0.278
+    age_mean: float = 23.64
+    age_std: float = 6.04
+    infinum_age = 10
+    supremum_age = 80
 
 
 class CommonTools:
@@ -84,174 +95,3 @@ class CommonTools:
             view_name = view[0]
             duckdb.query(f"DROP VIEW IF EXISTS {view_name}")
             print(f"[DROPPED VIEW]: {view_name}")
-
-    @classmethod
-    def load_country_pc_distribution_table_from_csv(cls, config_file_path: str = "datasets.json") -> pd.DataFrame:
-        """Load country PC distribution data from a CSV file.
-        Args:
-            data_folder (str): The path to the folder containing the country PC distribution CSV file.
-
-        Returns:
-            pd.DataFrame: A data frame containing country PC distribution data.
-        """
-        datasets_metadata = cls.load_json_config(config_file_path)
-        data_folder = datasets_metadata['country_distribution']['folder']
-        for entity in os.listdir(data_folder):
-            if os.path.isfile(f"{data_folder}/" + entity) and Path(entity).suffix == ".csv":
-                print(f"[FOUND]: {entity}")
-                entity_name = Path(entity).stem
-                data_frame = pd.read_csv(f"{data_folder}/{entity}").reset_index(drop=True)
-                data_frame["country"] = data_frame["country"].str.strip().str.lower()
-                data_frame["country"] = data_frame["country"].str.replace(" ", "_")
-                data_frame["number"] = data_frame["number"].astype(int)
-                data_frame.drop_duplicates(subset=["country"], keep='first', inplace=True)
-                shape = data_frame.shape
-                columns = data_frame.columns.tolist()
-                print(f"[LOADED] {entity_name}. Shape: {shape}. Columns: {columns}")   
-        return data_frame
-
-    @classmethod
-    def load_cities_location_and_population_table_from_csv(cls, config_file_path: str = "datasets.json", dry: bool = True) -> pd.DataFrame:
-        """Load city location and population data from a CSV file.
-        Args:
-            data_folder (str): The path to the folder containing the city location and population CSV file
-            dry (bool): If True, only stores country,location_name,latitude,longitude columns and renames to country,city,latitude,longitude.
-        Returns:
-            pd.DataFrame: A data frame containing city location and population data.
-        """
-        map_of_countries_corrections = {
-            "Venezuela, Bolivarian Rep. of": "venezuela",
-            "Moldova, Republic of": "moldova",
-            "Brunei Darussalam": "brunei",
-            "Taiwan, China": "taiwan",
-            "Russian Federation": "russia",
-            "Libyan Arab Jamahiriya": "libya",
-            "Hong Kong, China": "hong_kong",
-            "Korea, Republic of": "south_korea",
-            "Cape Verde": "cabo_verde",
-            "Viet Nam": "vietnam",
-        }
-
-        datasets_metadata = cls.load_json_config(config_file_path)
-        data_folder = datasets_metadata['cities_population_and_location']['folder']
-        for entity in os.listdir(data_folder):
-            if os.path.isfile(f"{data_folder}/" + entity) and Path(entity).suffix == ".csv":
-                print(f"[FOUND]: {entity}")
-                entity_name = Path(entity).stem
-                data_frame = pd.read_csv(f"{data_folder}/{entity}").reset_index(drop=True)
-                if dry:
-                    data_frame = data_frame[["Country name EN", "ASCII Name", "Population", "Latitude", "Longitude"]]
-                    data_frame.columns = ["country", "city", "population", "latitude", "longitude"]
-
-                    for wrong_country_name, correct_country_name in map_of_countries_corrections.items():
-                        data_frame['country'] = data_frame['country'].str.replace(wrong_country_name, correct_country_name)
-
-                    data_frame["country"] = data_frame["country"].str.strip().str.lower()
-                    data_frame["country"] = data_frame["country"].str.replace(" ", "_")
-                    data_frame["city"] = data_frame["city"].str.strip().str.lower()
-                    data_frame["city"] = data_frame["city"].str.replace(" ", "_")
-                    data_frame["latitude"] = data_frame["latitude"].astype(float)
-                    data_frame["longitude"] = data_frame["longitude"].astype(float)
-                    data_frame["population"] = data_frame["population"].astype(int)
-
-                shape = data_frame.shape
-                columns = data_frame.columns.tolist()
-                print(f"[LOADED] {entity_name}. Shape: {shape}. Columns: {columns}")   
-        return data_frame
-    
-    @classmethod
-    def prepare_city_tables(cls) -> pd.DataFrame:
-        country_mal_distr = cls.load_country_pc_distribution_table_from_csv()
-        cities_stats = cls.load_cities_location_and_population_table_from_csv()
-
-        countries = set(country_mal_distr['country'].tolist())
-        cities_stats = cities_stats[cities_stats['country'].isin(countries)].reset_index(drop=True)
-        cities_population_sum = cities_stats['population'].sum()
-        cities_fraction = cities_stats['population'] / cities_population_sum
-        
-        # 1) merge
-        # cities_stats = cities_stats.merge(
-        #     country_mal_distr,
-        #     on="country",
-        #     how="left",
-        #     validate="many_to_one"   # one country → many cities
-        # )
-        # 2) sum population over available cities per country
-        # cities_stats["country_total_pop"] = cities_stats.groupby("country")["population"].transform("sum")
-        # 3) distribute
-        # cities_stats["city_users_float"] = (
-        #     cities_stats["population"] / cities_stats["country_total_pop"] * cities_stats["number"]
-        # )
-        # 4) balanced rounding
-        # cities_stats = cls.fix_rounding(cities_stats)
-        # cols_to_drop = ["number", "city_users_float", "population", "country_total_pop", "base", "frac", "diff", "country_total_base"]
-        # 5) remove temporary columns
-        # cities_stats = cities_stats.drop(
-        #     columns=[c for c in cols_to_drop if c in cities_stats.columns],
-        #     errors="ignore"
-        #     )
-        # 6) remove cities with 0 users
-        # cities_stats = cities_stats[cities_stats["city_users"] > 0]
-        return cities_stats
-
-    @staticmethod
-    def fix_rounding(df):
-        """
-        Adjust rounded values so that their total sum equals a given target.
-
-        This function performs integer rounding on an array of numeric values
-        and then fixes the rounding error by distributing ±1 adjustments
-        to elements with the largest fractional parts (for positive correction)
-        or smallest fractional parts (for negative correction).
-
-        Parameters
-        ----------
-        values : array-like of float
-            Original fractional values whose sum is approximately equal to `target_sum`.
-        target_sum : int
-            The desired integer sum after rounding.
-
-        Returns
-        -------
-        list of int
-            Integer values whose sum is exactly `target_sum`, obtained by:
-            1. Standard rounding
-            2. Minimal redistribution of ±1 to correct total error
-
-        Notes
-        -----
-        - Guarantees exact integer total equal to `target_sum`.
-        - Minimizes L1 deviation from naïve rounding.
-        - At most |target_sum − sum(round(values))| elements are modified.
-        - Each modified value differs from round(x) by ±1.
-
-        Examples
-        --------
-        >>> fix_rounding([3.4, 2.6, 1.2, 1.0], 9)
-        [3, 4, 1, 1]
-
-        """
-        # Round, but keep the fractional part
-        df["base"] = np.floor(df["city_users_float"]).astype(int)
-        df["frac"] = df["city_users_float"] - df["base"]
-
-        # How much is missing after rounding down
-        df["country_total_base"] = df.groupby("country")["base"].transform("sum")
-        df["diff"] = df["number"] - df["country_total_base"]
-
-        result = []
-
-        for country, sub in df.groupby("country"):
-            sub = sub.copy()
-            k = int(sub["diff"].iloc[0])  # how many to add
-            # Sort by descending fractional part
-            sub = sub.sort_values("frac", ascending=False)
-
-            # Add 1 to the first k cities
-            sub["city_users"] = sub["base"]
-            if k > 0:
-                sub.iloc[:k, sub.columns.get_loc("city_users")] += 1
-
-            result.append(sub)
-
-        return pd.concat(result).sort_index()
