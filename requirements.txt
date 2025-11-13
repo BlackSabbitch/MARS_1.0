@@ -1,0 +1,5 @@
+pymongo
+mysql-connector-python
+duckdb
+pandas
+numpy
