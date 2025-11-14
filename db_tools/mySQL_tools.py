@@ -5,7 +5,7 @@ from pathlib import Path
 
 class MySQLTools:
 
-    DDL = Path("db/schema/schema.sql").read_text(encoding="utf-8")
+    DDL = Path("db_tools/schema.sql").read_text(encoding="utf-8")
     HOST = "mars-db.cdcmiuuwqo5z.eu-north-1.rds.amazonaws.com"
     DB   = "mars_db"
 
@@ -74,6 +74,7 @@ class MySQLTools:
             print(f"Index {index_name} already exists on {table}")
         connection = self.__init__()
         connection.ping(reconnect=True, attempts=3, delay=2)
+        connection.commit()
 
         cursor.close()
         connection.close()
