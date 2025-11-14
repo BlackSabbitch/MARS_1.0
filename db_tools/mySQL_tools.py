@@ -2,19 +2,25 @@ import mysql.connector
 from mysql.connector import Error
 from common_tools import CommonTools
 from pathlib import Path
+from dotenv import load_dotenv
+import os
 
 class MySQLTools:
 
+    load_dotenv()
     DDL = Path("db_tools/schema.sql").read_text(encoding="utf-8")
-    HOST = "mars-db.cdcmiuuwqo5z.eu-north-1.rds.amazonaws.com"
-    DB   = "mars_db"
+    HOST = os.getenv("MYSQL_HOST")
+    PORT = os.getenv("MYSQL_PORT")
+    DB   = os.getenv("MYSQL_DB")
+    LOCAL_USER = os.getenv("MYSQL_USER")
+    LOCAL_PASSWORD = os.getenv("MYSQL_PASSWORD")
 
     def __init__(self,
                  host: str = HOST,
-                 user: str = "msamosudova",
-                 password: str = "Duckling25!",
+                 user: str = LOCAL_USER,
+                 password: str = LOCAL_PASSWORD,
                  database: str = DB,
-                 port: int = 3306):
+                 port: int = PORT):
 
         try:
             self.connection = mysql.connector.connect(
