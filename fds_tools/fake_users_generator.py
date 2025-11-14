@@ -2,10 +2,10 @@ import os
 import pandas as pd
 from pathlib import Path
 import duckdb
-import json
 import numpy as np
 from dataclasses import dataclass
-from common_tools import CommonTools
+import logging
+from common_tools import CommonTools, PandasTools, log
 
 
 @dataclass
@@ -18,22 +18,9 @@ class Constants:
     supremum_age = 80
 
 
-class FDSTools:
+class FakeUsersGenerator:
     @staticmethod
-    def dump_the_file(file_purpose, config_file_path: str = "datasets.json"):
-        datasets_metadata = CommonTools.load_json_config(config_file_path)
-        data_folder = datasets_metadata[f"{file_purpose}"]['folder']
-        content = os.listdir(data_folder)
-        assert len(content) == 1, "Error: More then 1 MAL distribution file!"
-        entity = content[0]
-        if os.path.isfile(f"{data_folder}/" + entity) and Path(entity).suffix == ".csv":
-            print(f"[FOUND]: {entity}")
-            return data_folder, entity
-        else:
-            raise ValueError(f"No source file for {file_purpose}") 
-
-    @classmethod
-    def load_country_pc_distribution_table_from_csv(cls, config_file_path: str = "datasets.json", file_purpose: str = "country_distribution") -> pd.DataFrame:
+    def load_country_pc_distribution_table_from_csv() -> pd.DataFrame:
         """Load country PC distribution data from a CSV file.
         Args:
             data_folder (str): The path to the folder containing the country PC distribution CSV file.
@@ -41,20 +28,20 @@ class FDSTools:
         Returns:
             pd.DataFrame: A data frame containing country PC distribution data.
         """
-        data_folder, source_file = cls.dump_the_file(file_purpose, config_file_path)
-        entity_name = Path(source_file).stem
-        data_frame = pd.read_csv(f"{data_folder}/{source_file}").reset_index(drop=True)
+        purpose = "myanimelist_countries_distribution"
+        file_path = CommonTools.get_paths()[purpose]
+        data_frame = PandasTools.load_path(file_path).reset_index(drop=True)
         data_frame["country"] = data_frame["country"].str.strip().str.lower()
         data_frame["country"] = data_frame["country"].str.replace(" ", "_")
         data_frame["number"] = data_frame["number"].astype(int)
         data_frame.drop_duplicates(subset=["country"], keep='first', inplace=True)
         shape = data_frame.shape
         columns = data_frame.columns.tolist()
-        print(f"[LOADED] {entity_name}. Shape: {shape}. Columns: {columns}")   
+        log(f"Loaded {purpose}. Shape: {shape}. Columns: {columns}", tag="LOADED", level=logging.INFO)
         return data_frame
 
-    @classmethod
-    def load_cities_location_and_population_table_from_csv(cls, config_file_path: str = "datasets.json", file_purpose: str = "cities_population_and_location") -> pd.DataFrame:
+    @staticmethod
+    def load_cities_location_and_population_table_from_csv() -> pd.DataFrame:
         """Load city location and population data from a CSV file.
         Args:
             data_folder (str): The path to the folder containing the city location and population CSV file
@@ -75,9 +62,9 @@ class FDSTools:
             "Viet Nam": "vietnam",
         }
 
-        data_folder, source_file = cls.dump_the_file(file_purpose, config_file_path)
-        entity_name = Path(source_file).stem
-        data_frame = pd.read_csv(f"{data_folder}/{source_file}").reset_index(drop=True)
+        purpose = "cities_population_and_location"
+        file_path = CommonTools.load_csv_files_pathes()[purpose]
+        data_frame = PandasTools.load_path(file_path).reset_index(drop=True)
         data_frame = data_frame[["Country name EN", "ASCII Name", "Population", "Latitude", "Longitude"]]
         data_frame.columns = ["country", "city", "population", "latitude", "longitude"]
 
@@ -94,7 +81,7 @@ class FDSTools:
 
         shape = data_frame.shape
         columns = data_frame.columns.tolist()
-        print(f"[LOADED] {entity_name}. Shape: {shape}. Columns: {columns}")   
+        log(f"Loading {purpose}. Shape: {shape}. Columns: {columns}", tag="LOADED", level=logging.INFO)   
         return data_frame
     
     @classmethod
@@ -105,6 +92,7 @@ class FDSTools:
         # compute country fraction among all users
         country_mal_distr["country_impact"] = country_mal_distr['number'].values / country_mal_distr['number'].sum()
         temporary_columns.append("number")
+        log("Table 'myanimelist_countries_distribution' has been processed with new columns", tag="PROCESS", level=logging.DEBUG)
 
         cities_stats = cls.load_cities_location_and_population_table_from_csv()
         # keep only countries present in the MyAnimeList distribution table
@@ -114,6 +102,7 @@ class FDSTools:
         cities_stats["country_total_pop"] = cities_stats.groupby("country")["population"].transform("sum")
         cities_stats["city_pop_impact"] = cities_stats["population"] / cities_stats["country_total_pop"]
         temporary_columns.extend(["country_total_pop", "population"])
+        log("Table 'cities_population_and_location' has been processed with new columns", tag="PROCESS", level=logging.DEBUG)
         # 1) merge
         cities_stats = cities_stats.merge(
             country_mal_distr,
@@ -121,25 +110,28 @@ class FDSTools:
             how="left",
             validate="many_to_one"   # one country → many cities
         )
+        log("Tables have been merged", tag="PROCESS", level=logging.DEBUG)
 
         cities_stats["city_fraction_among_users"] = cities_stats["city_pop_impact"] * cities_stats["country_impact"]
         temporary_columns.extend(["city_pop_impact", "country_impact"])
         # clean up temporary columns
         cities_stats.drop(columns=temporary_columns, inplace=True)
+        log("Target table has been prepared", tag="PROCESS", level=logging.DEBUG)
 
         return cities_stats
 
-    @classmethod
-    def get_distinct_user_ids(cls):
+    @staticmethod
+    def get_distinct_user_ids() -> pd.Series:
         table_names_pathes = CommonTools.load_csv_files_pathes()
         animelist_path = table_names_pathes['animelist']
         con = duckdb.connect()
         query = f"SELECT DISTINCT user_id FROM '{animelist_path}'"
         user_ids = con.execute(query).fetchdf()['user_id']
+        log("Distinct user id's have been fetched", tag="PROCESS", level=logging.DEBUG)
         return user_ids
 
     @classmethod
-    def generate_fake_user_profiles(cls, random_state: int = 42) -> pd.DataFrame:
+    def generate_fake_user_profiles(cls, save: bool = False, save_rel_path: str = "", random_state: int = 42) -> pd.DataFrame:
         """
         Generate a table of fake user profiles with probabilistic city assignment,
         age and sex distributions.
@@ -184,7 +176,8 @@ class FDSTools:
 
         assigned_cities = cities[city_idx]
         assigned_countries = countries[city_idx]
-        assigned_locations = list(zip(latitudes[city_idx], longitudes[city_idx]))
+        assigned_latitudes = latitudes[city_idx]
+        assigned_longitudes = longitudes[city_idx]
 
         # --- собираем DataFrame ---
         profiles = pd.DataFrame({
@@ -193,62 +186,17 @@ class FDSTools:
             'city': assigned_cities,
             'age': ages,
             'sex': sexes,
-            'location': assigned_locations
+            'latitude': assigned_latitudes,
+            'longitude': assigned_longitudes
         })
+        log(f"Users profiles were updated with fake columns 'sex', 'age', 'latitude', 'longitude'", tag="GENERATED", level=logging.INFO)
+        if save:
+            save_rel_path = save_rel_path if save_rel_path else 'users'
+            output_dir = Path("data") / save_rel_path
+            output_dir.parent.mkdir(parents=True, exist_ok=True)
 
+            output_file = output_dir / "profiles.csv"
+            profiles.to_csv(output_file, index=False)
+            print(f"Saved to {output_file.resolve()}")
+            log(f"Users profiles were saved to {output_file}", tag="GENERATED", level=logging.INFO)
         return profiles
-
-    @classmethod
-    def find_not_honest_users(cls):
-        # Пути к файлам
-        table_names_pathes = cls.load_csv_files_pathes()
-        animelist_path = table_names_pathes['animelist']
-        anime_path = table_names_pathes['anime']
-        rating_complete_path = table_names_pathes['rating_complete']
-
-        # подключаемся к временной in-memory базе
-        con = duckdb.connect(database=':memory:')
-
-        # Загружаем только нужные поля (всё остальное не читаем)
-        query_find_bad = f"""
-        SELECT 
-            l.user_id,
-            l.anime_id,
-            l.rating,
-            l.watched_episodes,
-            a.Episodes
-        FROM read_csv_auto('{animelist_path}', 
-                        columns={{'user_id':'BIGINT', 'anime_id':'BIGINT', 'rating':'INT', 'watching_status':'INT', 'watched_episodes':'INT'}})
-                AS l
-        JOIN read_csv_auto('{anime_path}', 
-                        columns={{'MAL_id':'BIGINT', 'Episodes':'INT'}})
-                AS a
-        ON l.anime_id = a.MAL_id
-        WHERE 
-            l.watching_status = 2
-            AND l.rating != 0
-            AND l.watched_episodes < a.Episodes
-        """
-
-        # Загружаем только нужные строки
-        df_incomplete_votes = con.execute(query_find_bad).fetchdf()
-        return df_incomplete_votes
-    
-    @classmethod
-    def clean_for_not_honest_users(cls):
-        df_incomplete_votes = cls.find_not_honest_users()
-        # Загружаем rating_complete (тут уже можно pandas, он небольшой)
-        table_names_pathes = cls.load_csv_files_pathes()
-        rating_complete_path = table_names_pathes['rating_complete']
-        df_rating_complete = pd.read_csv(rating_complete_path)
-
-        # Формируем множество (user_id, anime_id) для удаления
-        pairs_to_remove = set(zip(df_incomplete_votes.user_id, df_incomplete_votes.anime_id))
-
-        # Фильтруем
-        mask = ~df_rating_complete.apply(lambda x: (x.user_id, x.anime_id) in pairs_to_remove, axis=1)
-        df_clean = df_rating_complete[mask].reset_index(drop=True)
-
-        # Сохраняем
-        df_clean.to_csv('rating_complete_cleaned.csv', index=False)
-        print(f"Удалено строк: {len(df_rating_complete) - len(df_clean)}")
