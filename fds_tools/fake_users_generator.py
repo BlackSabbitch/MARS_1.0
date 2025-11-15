@@ -29,7 +29,7 @@ class FakeUsersGenerator:
             pd.DataFrame: A data frame containing country PC distribution data.
         """
         purpose = "myanimelist_countries_distribution"
-        file_path = CommonTools.get_paths()[purpose]
+        file_path = CommonTools.load_csv_files_pathes()[purpose]
         data_frame = PandasTools.load_path(file_path).reset_index(drop=True)
         data_frame["country"] = data_frame["country"].str.strip().str.lower()
         data_frame["country"] = data_frame["country"].str.replace(" ", "_")

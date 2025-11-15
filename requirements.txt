@@ -3,3 +3,4 @@ mysql-connector-python
 duckdb
 pandas
 numpy
+dotenv
