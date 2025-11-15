@@ -5,6 +5,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 import os
 
+
+class MySQLConnection:
+    pass
+
+
 class MySQLTools:
 
     load_dotenv()
