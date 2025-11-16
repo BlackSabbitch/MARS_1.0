@@ -1,12 +1,85 @@
 from csv import Error
 import mysql.connector
 import pandas as pd
-from common_tools import CommonTools
+from mysql.connector import Error as MySQLError
+
 from db_tools.mongoDB_tools import MongoTools
-from db_tools.mySQL_tools import MySQLTools
 
 
 class AnimeRecommendation:
+
+    @staticmethod
+    def recommend_portugal_top30(connection, mongo_tools):
+
+        query = """
+        WITH
+        pt_users AS (
+            SELECT userID FROM users
+            WHERE country = 'Portugal' AND age >= 18
+        ),
+        pt_avg_by_genre AS (
+            SELECT g.genreID,
+                   AVG(r.user_rating) AS avg_rating,
+                   COUNT(*) AS n_ratings
+            FROM anime_user_rating r
+            JOIN pt_users u ON u.userID = r.userID
+            JOIN anime_genre ag ON ag.MAL_ID = r.MAL_ID
+            JOIN genre g ON g.genreID = ag.genreID
+            WHERE r.user_rating IS NOT NULL
+            GROUP BY g.genreID
+            HAVING n_ratings >= 5
+        ),
+        top_genres AS (
+            SELECT genreID
+            FROM pt_avg_by_genre
+            ORDER BY avg_rating DESC, n_ratings DESC
+            LIMIT 5
+        ),
+        scored_anime AS (
+            SELECT a.MAL_ID, a.name, s.score, s.members,
+                GROUP_CONCAT(DISTINCT g.genre ORDER BY g.genre SEPARATOR ', ') AS genres
+            FROM anime a
+            JOIN anime_statistics s USING (MAL_ID)
+            JOIN anime_genre ag ON ag.MAL_ID = a.MAL_ID
+            JOIN genre g ON g.genreID = ag.genreID
+            WHERE ag.genreID IN (SELECT genreID FROM top_genres)
+              AND s.score IS NOT NULL
+              AND COALESCE(s.members, 0) > 500
+            GROUP BY a.MAL_ID, a.name, s.score, s.members
+        )
+        SELECT *
+        FROM scored_anime
+        ORDER BY score DESC, members DESC
+        LIMIT 30;
+        """
+
+        try:
+            df = pd.read_sql(query, connection)
+
+            print("\n=== Recommendations for Portugal (18+) ===\n")
+            for i, row in df.iterrows():
+                print(f"{i+1:2d}. {row['name']} ({row['score']}, {row['members']:,} members)")
+                print(f"    Genres: {row['genres']}\n")
+
+            print(f"Total recommendations: {len(df)}")
+
+            # ---- SYNOPSIS FROM MONGO ----
+            collection = mongo_tools.get_collection("animes")
+            mal_ids = df["MAL_ID"].astype(int).tolist()
+            docs = collection.find(
+                {"_id": {"$in": mal_ids}},
+                {"_id": 1, "synopsis": 1}
+            )
+
+            synopsis_map = {doc["_id"]: doc.get("synopsis", "") for doc in docs}
+            df["synopsis"] = df["MAL_ID"].map(synopsis_map)
+
+            return df
+
+        except MySQLError as e:
+            print("MySQL Error:", e)
+            return None
+
 
     def hundred_best(connection):
         query = """
@@ -142,12 +215,99 @@ class AnimeRecommendation:
             print("MySQL Error:", e)
             return None
 
+    @staticmethod
+    def recommend_pt_adventure_magic(connection, mongo_tools):
+        """
+        Recommend top anime liked by Portuguese users (18+)
+        specifically in genres Adventure + Magic.
+        Uses optimized SQL + safe cursor (not pandas.read_sql).
+        """
 
+        query = """
+        WITH
+        pt_users AS (
+            SELECT userID 
+            FROM users
+            WHERE country = 'Portugal'
+              AND age >= 18
+        ),
 
+        pt_ratings AS (
+            SELECT r.MAL_ID, r.user_rating
+            FROM anime_user_rating r
+            JOIN pt_users u ON u.userID = r.userID
+            WHERE r.MAL_ID IN (
+                SELECT MAL_ID
+                FROM anime_genre ag
+                JOIN genre g ON g.genreID = ag.genreID
+                WHERE g.genre IN ('Adventure', 'Magic')
+            )
+        ),
 
+        pt_scores AS (
+            SELECT MAL_ID,
+                   AVG(user_rating) AS avg_pt_score,
+                   COUNT(*)          AS cnt_pt_votes
+            FROM pt_ratings
+            GROUP BY MAL_ID
+            HAVING cnt_pt_votes >= 3
+        )
 
+        SELECT
+            a.MAL_ID,
+            a.name,
+            s.score AS global_score,
+            s.members,
+            pt.avg_pt_score,
+            pt.cnt_pt_votes,
+            GROUP_CONCAT(DISTINCT g.genre ORDER BY g.genre SEPARATOR ', ') AS genres
+        FROM pt_scores pt
+        JOIN anime a USING (MAL_ID)
+        JOIN anime_statistics s USING (MAL_ID)
+        JOIN anime_genre ag ON ag.MAL_ID = a.MAL_ID
+        JOIN genre g ON g.genreID = ag.genreID
+        WHERE s.members >= 500
+        GROUP BY a.MAL_ID, a.name, s.score, s.members, pt.avg_pt_score, pt.cnt_pt_votes
+        ORDER BY pt.avg_pt_score DESC, pt.cnt_pt_votes DESC, s.score DESC
+        LIMIT 30;
+        """
 
+        try:
+            # RUN SQL (avoid pandas.read_sql → hangs)
+            print("Executing SQL...")
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            cursor.close()
+            print("SQL done!")
 
+            # Convert to DataFrame
+            df = pd.DataFrame(rows)
 
+            print("\n=== TOP 30 Adventure + Magic for Portugal (18+) ===\n")
+            for i, row in df.iterrows():
+                print(
+                    f"{i+1:2d}. {row['name']} "
+                    f"(PT score={row['avg_pt_score']:.2f}, "
+                    f"votes={row['cnt_pt_votes']}, "
+                    f"global={row['global_score']})"
+                )
+                print(f"    Genres: {row['genres']}\n")
 
+            # Add Mongo synopsis
+            mal_ids = df["MAL_ID"].astype(int).tolist()
+            collection = mongo_tools.get_collection("animes")
 
+            docs = collection.find(
+                {"_id": {"$in": mal_ids}},
+                {"_id": 1, "synopsis": 1}
+            )
+
+            synopsis_map = {doc["_id"]: doc.get("synopsis", "") for doc in docs}
+            df["synopsis"] = df["MAL_ID"].map(synopsis_map)
+
+            return df
+
+        except MySQLError as e:
+            print("MySQL Error:", e)
+            return None
