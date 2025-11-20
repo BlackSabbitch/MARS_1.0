@@ -4,10 +4,48 @@ from common_tools import CommonTools
 from pathlib import Path
 from dotenv import load_dotenv
 import os
+from dataclasses import dataclass
+
+load_dotenv()
+
+@dataclass
+class MySQLConfig:
+    host: str
+    port: int
+    user: str
+    password: str
+    database: str
+
+    @classmethod
+    def from_env(cls, prefix: str):
+        return cls(
+            host=os.getenv(f"{prefix}_MYSQL_HOST"),
+            port=os.getenv(f"{prefix}_MYSQL_PORT"),
+            user=os.getenv(f"{prefix}_MYSQL_USER"),
+            password=os.getenv(f"{prefix}_MYSQL_PASSWORD"),
+            database=os.getenv(f"{prefix}_MYSQL_DB"),
+        )
 
 
-class MySQLConnection:
-    pass
+@dataclass
+class ConnectionConfigType:
+    real_connection_config = MySQLConfig.from_env("REAL")
+    test_connection_config = MySQLConfig.from_env("TEST")
+    local_connection_config = MySQLConfig.from_env("LOCAL")
+
+
+class Connection:
+    """Создаёт соединения — удобно тестировать и подменять."""
+    @staticmethod
+    def create(config: MySQLConfig):
+        return mysql.connector.connect(
+            host=config.host,
+            port=config.port,
+            user=config.user,
+            password=config.password,
+            database=config.database,
+            connection_timeout=10
+        )
 
 
 class MySQLTools:
