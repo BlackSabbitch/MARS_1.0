@@ -218,9 +218,8 @@ class AnimeRecommendation:
     @staticmethod
     def recommend_pt_adventure_magic(connection, mongo_tools):
         """
-        Recommend top anime liked by Portuguese users (18+)
+        Recommend top anime liked by Portuguese users
         specifically in genres Adventure + Magic.
-        Uses optimized SQL + safe cursor (not pandas.read_sql).
         """
 
         query = """

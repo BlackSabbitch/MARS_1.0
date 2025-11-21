@@ -42,7 +42,10 @@ class CommonTools:
         datasets_metadata = cls.load_json_config(config_file_path)
         for key, value in datasets_metadata.items():
             folder = value['folder']
-            for entity in os.listdir(folder):
+            if not os.path.isdir(folder):
+                print(f"[WARN] Folder does not exist: {folder} — skipped")
+            continue
+        for entity in os.listdir(folder):
                 if os.path.isfile(f"{folder}/" + entity) and Path(entity).suffix == ".csv":
                     files[Path(entity).stem] = f"{folder}/{entity}"
         return files

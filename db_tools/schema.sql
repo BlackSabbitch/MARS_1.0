@@ -45,11 +45,14 @@ CREATE TABLE IF NOT EXISTS licensor (
 
 -- ---------- CORE ----------
 CREATE TABLE IF NOT EXISTS users (
-  userID INT UNSIGNED PRIMARY KEY,
-  sex         VARCHAR(16)  NULL,
-  age         SMALLINT     NULL,
-  geoLocation VARCHAR(128) NULL
-) ENGINE=InnoDB;
+    userID INT PRIMARY KEY,
+    sex VARCHAR(16) NULL,
+    age SMALLINT NULL,
+    country VARCHAR(64) NULL,
+    city VARCHAR(64) NULL,
+    latitude FLOAT NULL,
+    longitude FLOAT NULL
+);
 
 CREATE TABLE IF NOT EXISTS anime (
   MAL_ID       INT UNSIGNED PRIMARY KEY,
