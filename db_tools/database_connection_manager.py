@@ -58,6 +58,14 @@ class DatabaseConnectionManager:
     def get_mysql_cursor(self):
         conn = self.get_mysql_connection()
         return conn.cursor()
+    
+    def new_mysql_connection(self):
+        """Always returns a NEW independent MySQL connection."""
+        try:
+            return mysql.connector.connect(**self.mysql_config)
+        except Error as e:
+            print("MySQL new connection error:", e)
+            return None
 
     # -----------------------------
     # MongoDB
