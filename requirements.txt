@@ -11,3 +11,4 @@ igraph
 seaborn
 matplotlib
 pycountry
+pyarrow
