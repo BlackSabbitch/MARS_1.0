@@ -3,6 +3,7 @@ mysql-connector-python
 duckdb
 pandas
 numpy
+scipy
 dotenv
 ipykernel
 networkx
