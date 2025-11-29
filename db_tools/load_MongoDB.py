@@ -427,3 +427,4 @@ class LoadMongoDB:
         )
 
         return {"english_name": english, "japanese_name": japanese, "synonyms": syn}
+

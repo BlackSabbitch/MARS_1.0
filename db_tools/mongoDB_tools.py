@@ -6,8 +6,6 @@ from typing import Any, Dict, List, Optional
 from pymongo import MongoClient, UpdateOne
 from pymongo.collection import Collection
 from pymongo.errors import BulkWriteError
-from dotenv import load_dotenv
-import os
 
 
 class MongoTools:
@@ -18,10 +16,9 @@ class MongoTools:
     - Index creation
     - All shared helper functions used by data loaders
     """
-    load_dotenv()
-    uri = os.getenv("MONGO_URI")
-    db_name = os.getenv("MONGO_DB")
-    collection = os.getenv("MONGO_COL")
+    uri = "mongodb+srv://msamosudova:Duckling@mars-cluster.8ruotdw.mongodb.net/?appName=MARS-Cluster"
+    db_name = "anime_db"
+    collection = "animes"
 
     def __init__(self, uri: str, db_name: str, collection: str):
         self.uri = uri
@@ -160,3 +157,4 @@ class MongoTools:
             if s and s.upper() not in {"NULL", "NONE", "N/A", "UNKNOWN"}:
                 return s
         return None
+

@@ -1,498 +1,1010 @@
+import mysql
+import pandas as pd
+import re
+from pathlib import Path
+from database_connection_manager import DatabaseConnectionManager
 
-
-import os, csv, re
-import mysql.connector
-from mysql.connector import Error
-from mysql.connector import errorcode
-from mySQL_tools import MySQLTools
-from common_tools import CommonTools  
-from mySQL_tools import MySQLTools
 
 class LoadMySQL:
+    """
+    Loads all structured data into MySQL based on the project schema.
+    Uses DatabaseConnectionManager for all DB operations.
+    """
 
-    anime_csv = CommonTools.load_csv_files_pathes()['anime']
-    users_csv = CommonTools.load_csv_files_pathes()['users']
-    animelist_csv = CommonTools.load_csv_files_pathes()['animelist']
-    rating_complete_csv = CommonTools.load_csv_files_pathes()['rating_complete']
-    watching_status_csv = CommonTools.load_csv_files_pathes()['watching_status']
+    def __init__(self, db: DatabaseConnectionManager):
+        self.db = db
+        self.paths = {}
 
-    # ---------- UTILS ----------
+    # ----------------------------------------------------------------------
+    # LOAD CSV PATHS
+    # ----------------------------------------------------------------------
+
+    def load_paths(self, config: dict[str, str]):
+        """
+        Loads file paths for CSV datasets.
+        Example:
+            loader.load_paths({
+                "anime": "DataSet/anime.csv",
+                "users": "DataSet/users.csv",
+                "ratings": "DataSet/rating_complete.csv"
+            })
+        """
+        self.paths = config
+
+    def read_csv(self, key: str) -> pd.DataFrame:
+        """Read CSV by key from loaded paths."""
+        if key not in self.paths:
+            raise ValueError(f"CSV path for key '{key}' not loaded.")
+        return pd.read_csv(self.paths[key])
+
+    # ----------------------------------------------------------------------
+    # UTILS
+    # ----------------------------------------------------------------------
+
     @staticmethod
     def split_list(cell):
-        """split comma- or pipe-separated lists from dataset"""
-        if cell is None:
+        """Split comma/pipe-separated values."""
+        if not isinstance(cell, str):
             return []
-        s = str(cell).strip()
-        if not s or s.upper() in {"UNKNOWN","NONE","NULL","N/A"}:
-            return []
-
-        parts = re.split(r'[|;,]', s)
+        parts = re.split(r"[|;,]", cell.strip())
         return [p.strip() for p in parts if p.strip()]
 
-    @staticmethod
-    def clean_str(s):
-        if s is None:
-            return None
-        s = str(s).strip()
-        return s if s else None
-    
-    @staticmethod
-    def to_int(s):
-        try:
-            return int(s)
-        except:
-            return None
-        
-    @staticmethod
-    def to_float2(s):
-        try:
-            return round(float(s), 2)
-        except:
-            return None
+    # ----------------------------------------------------------------------
+    # MAIN LOADERS
+    # ----------------------------------------------------------------------
 
-    @staticmethod
-    def insert_ignore(cursor, table, col, val):
-        cursor.execute(f"INSERT IGNORE INTO {table} ({col}) VALUES (%s)", (val,))
+    def load_anime(self):
+        """
+        Loads anime.csv into:
+        - type lookup table
+        - source lookup table
+        - age_rating lookup table
+        - anime main table
+        Fully consistent with schema.sql
+        """
+        print("\n=== Loading anime (with types, sources, age ratings) ===")
 
-    @staticmethod
-    def get_id(cursor, table, id_col, name_col, val, cache):
-        """Upsert into lookup and return id (cached)."""
-        if val is None:
-            return None
-        if val in cache:
-            return cache[val]
-        # try select
-        cursor.execute(f"SELECT {id_col} FROM {table} WHERE {name_col}=%s", (val,))
-        row = cursor.fetchone()
-        if row:
-            cache[val] = row[0]
-            return row[0]
-        # insert
-        cursor.execute(f"INSERT INTO {table} ({name_col}) VALUES (%s)", (val,))
-        cache[val] = cursor.lastrowid
-        return cache[val]
-    
-    @staticmethod
-    def to_int_safe(v):
-        try:
-            if v is None:
-                return None
-            s = str(v).strip()
-            if s == "":
-                return None
-            return int(s)
-        except:
-            return None
+        df = self.read_csv("anime")
 
-    # ---------- LOAD 1 ----------
-    # load_anime
-    # Loads anime.csv into: type, source, age_rating, genre, studio, producer, licensor,
-    # and fills anime, anime_statistics, plus bridges: anime_genre, anime_studio, anime_producer, anime_licensor.
-    def load_anime(batch_size: int = 1000):
+        conn = self.db.get_mysql_connection()
+        cur = self.db.get_mysql_cursor()
 
-        connection = MySQLTools.__init__.self.connection
-        if not os.path.exists(LoadMySQL.anime_csv):
-            raise FileNotFoundError(LoadMySQL.anime_csv)
-        
-        connection.autocommit = False
-        cursor = connection.cursor()
+        # -------------------------------------------------------------
+        # 1. LOAD TYPE LOOKUP
+        # -------------------------------------------------------------
+        types = set(df["Type"].dropna().unique())
+        cur.executemany(
+            "INSERT IGNORE INTO type (type) VALUES (%s)",
+            [(t,) for t in types]
+        )
+        conn.commit()
 
-        type_cache = {}
-        source_cache = {}
-        age_cache = {}
-        genre_cache = {}
-        studio_cache = {}
-        producer_cache = {}
-        licensor_cache = {}
+        cur.execute("SELECT typeID, type FROM type")
+        type_map = {t: tid for tid, t in cur.fetchall()}
 
-        # Counters
-        n_anime = n_stats = n_gen = n_st = n_prod = n_lic = 0
+        print(f"Loaded {len(types)} types")
 
-        with open(LoadMySQL.anime_csv, encoding="utf-8") as f:
+        # -------------------------------------------------------------
+        # 2. LOAD SOURCE LOOKUP
+        # -------------------------------------------------------------
+        sources = set(df["Source"].dropna().unique())
+        cur.executemany(
+            "INSERT IGNORE INTO source (source) VALUES (%s)",
+            [(s,) for s in sources]
+        )
+        conn.commit()
+
+        cur.execute("SELECT sourceID, source FROM source")
+        source_map = {s: sid for sid, s in cur.fetchall()}
+
+        print(f"Loaded {len(sources)} sources")
+
+        # -------------------------------------------------------------
+        # 3. LOAD AGE-RATING LOOKUP
+        # -------------------------------------------------------------
+        ratings = set(df["Rating"].dropna().unique())
+
+        cur.executemany(
+            "INSERT IGNORE INTO age_rating (age_rating) VALUES (%s)",
+            [(r,) for r in ratings]
+        )
+        conn.commit()
+
+        cur.execute("SELECT age_ratingID, age_rating FROM age_rating")
+        age_rating_map = {r: rid for rid, r in cur.fetchall()}
+
+        print(f"Loaded {len(ratings)} age ratings")
+
+        # -------------------------------------------------------------
+        # 4. LOAD ANIME TABLE
+        # -------------------------------------------------------------
+        rows = []
+
+        for _, r in df.iterrows():
+            mal_id = int(r["MAL_ID"])
+            name = r["Name"]
+
+            ep = r.get("Episodes")
+            if pd.isna(ep):
+                episodes = None
+            else:
+                try:
+                    episodes = int(ep)
+                except ValueError:
+                    episodes = None
+
+            aired = r.get("Aired")
+            premiered = r.get("Premiered")
+            duration = r.get("Duration")
+
+            typeID = type_map.get(r["Type"])
+            sourceID = source_map.get(r["Source"])
+            age_ratingID = age_rating_map.get(r["Rating"])
+
+            rows.append([
+                mal_id,
+                name,
+                episodes,
+                aired,
+                premiered,
+                duration,
+                sourceID,
+                typeID,
+                age_ratingID
+            ])
+
+        cur.executemany("""
+            INSERT INTO anime
+            (MAL_ID, name, episodes, aired, premiered, duration,
+                sourceID, typeID, age_ratingID)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON DUPLICATE KEY UPDATE
+                name=VALUES(name),
+                episodes=VALUES(episodes),
+                aired=VALUES(aired),
+                premiered=VALUES(premiered),
+                duration=VALUES(duration),
+                sourceID=VALUES(sourceID),
+                typeID=VALUES(typeID),
+                age_ratingID=VALUES(age_ratingID)
+        """, rows)
+
+        conn.commit()
+        print(f"Inserted/updated {len(rows)} anime rows.\n")
+        cur.close()
+
+
+    # ----------------------------------------------------------------------
+
+    def load_genres(self):
+        """Load genre lookup table and mapping anime_genre."""
+        print("\n=== Loading genres and anime_genre mapping ===")
+
+        df = self.read_csv("anime")
+
+        conn = self.db.get_mysql_connection()
+        cur = self.db.get_mysql_cursor()
+
+        # 1. genre lookup
+        genres = set()
+        for g in df["Genres"].dropna():
+            genres.update(self.split_list(g))
+
+        genres = sorted(genres)
+
+        cur.executemany(
+            "INSERT IGNORE INTO genre (genre) VALUES (%s)",
+            [(g,) for g in genres]
+        )
+        conn.commit()
+        print(f"Inserted {len(genres)} unique genres.")
+
+        # 2. mapping table
+        cur.execute("SELECT genreID, genre FROM genre")
+        genre_map = {g: gid for gid, g in cur.fetchall()}
+
+        rows = []
+        for _, r in df.iterrows():
+            mal_id = int(r["MAL_ID"])
+            g_list = self.split_list(r["Genres"])
+            for g in g_list:
+                gid = genre_map.get(g)
+                if gid:
+                    rows.append((mal_id, gid))
+
+        cur.executemany(
+            "INSERT IGNORE INTO anime_genre (MAL_ID, genreID) VALUES (%s,%s)",
+            rows
+        )
+        conn.commit()
+
+        print(f"Inserted {len(rows)} anime_genre mappings.")
+        cur.close()
+
+    # ----------------------------------------------------------------------
+
+    def load_users_from_animelist(self):
+        """
+        Loads unique user IDs from animelist.csv into `users` table.
+        This is the primary source of user IDs in the Kaggle dataset.
+        """
+        print("\n=== Loading user IDs from animelist.csv ===")
+
+        df = self.read_csv("animelist")
+
+        conn = self.db.get_mysql_connection()
+        cur = self.db.get_mysql_cursor()
+
+        user_ids = sorted(set(int(u) for u in df["user_id"].dropna()))
+
+        cur.executemany(
+            "INSERT IGNORE INTO users (userID) VALUES (%s)",
+            [(uid,) for uid in user_ids]
+        )
+
+        conn.commit()
+        print(f"Inserted {len(user_ids)} users.")
+        cur.close()
+
+    # ----------------------------------------------------------------------
+
+    def load_profiles_map(self):
+        """
+        Profile mapping using a temporary table + UPDATE JOIN.
+        """
+
+        print("\n=== Profile mapping ===")
+
+        df = self.read_csv("profiles")
+        df = df.where(pd.notnull(df), None)
+        profiles_len = len(df)
+        print(f"Loaded {profiles_len} profiles")
+
+        conn = self.db.get_mysql_connection()
+        cur = conn.cursor()
+
+        # 1. Create TEMP TABLE
+        print("Creating temporary table tmp_profiles...")
+        cur.execute("DROP TABLE IF EXISTS tmp_profiles")
+        cur.execute("""
+            CREATE TABLE tmp_profiles (
+                sex VARCHAR(16),
+                age SMALLINT,
+                country VARCHAR(64),
+                city VARCHAR(64),
+                latitude FLOAT,
+                longitude FLOAT,
+                mapping_idx INT PRIMARY KEY
+            ) ENGINE=InnoDB;
+        """)
+        conn.commit()
+
+        # 2. Insert profiles (batched)
+        print("Inserting profiles into tmp_profiles...")
+        sql_insert = """
+            INSERT INTO tmp_profiles
+            (sex, age, country, city, latitude, longitude, mapping_idx)
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
+        """
+
+        batch = []
+        batch_size = 10000
+        idx = 0
+
+        for _, row in df.iterrows():
+            batch.append((
+                row["sex"],
+                int(row["age"]) if row["age"] is not None else None,
+                row["country"],
+                row["city"],
+                float(row["latitude"]) if row["latitude"] is not None else None,
+                float(row["longitude"]) if row["longitude"] is not None else None,
+                idx
+            ))
+            idx += 1
+
+            if len(batch) >= batch_size:
+                cur.executemany(sql_insert, batch)
+                conn.commit()
+                print(f"Inserted {idx}/{profiles_len}")
+                batch.clear()
+
+        if batch:
+            cur.executemany(sql_insert, batch)
+            conn.commit()
+            print(f"Inserted all {profiles_len} profiles")
+
+        # 3. Fetch rating users
+        print("Fetching rating users...")
+        cur.execute("SELECT userID FROM users ORDER BY userID")
+        rating_users = [u[0] for u in cur.fetchall()]
+        total_users = len(rating_users)
+        print(f"Rating users: {total_users}")
+
+        # 4. Create mapping table for users
+        print("Creating tmp_user_map...")
+        cur.execute("DROP TABLE IF EXISTS tmp_user_map")
+        cur.execute("""
+            CREATE TABLE tmp_user_map (
+                userID INT PRIMARY KEY,
+                mapping_idx INT
+            ) ENGINE=InnoDB;
+        """)
+        conn.commit()
+
+        # 5. Fill user→profile mapping (cyclic)
+        print("Inserting mapping rows...")
+        batch = []
+        idx = 0
+
+        for uid in rating_users:
+            batch.append((uid, idx % profiles_len))
+            idx += 1
+
+            if len(batch) >= batch_size:
+                cur.executemany(
+                    "INSERT INTO tmp_user_map (userID, mapping_idx) VALUES (%s,%s)",
+                    batch
+                )
+                conn.commit()
+                batch.clear()
+
+        if batch:
+            cur.executemany(
+                "INSERT INTO tmp_user_map (userID, mapping_idx) VALUES (%s,%s)",
+                batch
+            )
+            conn.commit()
+
+        print("Mapping table filled")
+
+        # 6. Single-shot UPDATE with JOIN
+        print("Updating users via JOIN ...")
+        cur.execute("""
+            UPDATE users u
+            JOIN tmp_user_map m ON u.userID = m.userID
+            JOIN tmp_profiles p ON p.mapping_idx = m.mapping_idx
+            SET 
+                u.sex       = p.sex,
+                u.age       = p.age,
+                u.country   = p.country,
+                u.city      = p.city,
+                u.latitude  = p.latitude,
+                u.longitude = p.longitude;
+        """)
+        conn.commit()
+
+        print("\n=== DONE: Users updated ===")
+
+        # Cleanup
+        cur.execute("DROP TABLE IF EXISTS tmp_profiles")
+        cur.execute("DROP TABLE IF EXISTS tmp_user_map")
+        conn.commit()
+
+        cur.close()
+
+    # ----------------------------------------------------------------------
+
+    def load_rating_complete(self):
+        """
+        Optimized loader for rating_complete.csv:
+        user_id, anime_id, rating.
+        """
+        print("\n=== Loading rating_complete.csv ===")
+
+        path = self.paths.get("ratings")
+        if not path:
+            print("ratings path not configured")
+            return
+
+        conn = self.db.get_mysql_connection()
+        cur = self.db.get_mysql_cursor()
+
+        # Disable FK & indexes for maximum speed
+        cur.execute("SET FOREIGN_KEY_CHECKS = 0")
+        cur.execute("ALTER TABLE anime_user_rating DISABLE KEYS")
+        conn.commit()
+
+        import csv
+
+        batch = []
+        batch_size = 10000
+        total = 0
+
+        with open(path, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
-            rows = list(reader)
 
-        # columns vary slightly across exports; be defensive
-        def col(name, row):
-            # try exact, then case-insensitive
-            if name in row: return row[name]
-            for k in row.keys():
-                if k.lower() == name.lower():
-                    return row[k]
-            return None
+            for row in reader:
+                try:
+                    uid = int(row["user_id"])
+                    mal = int(row["anime_id"])
 
-        anime_batch = []
-        stats_batch = []
-        gen_bridge, st_bridge, prod_bridge, lic_bridge = [], [], [], []
+                    rating = row["rating"]
+                    rating = float(rating) if rating not in ("", "Unknown", None) else None
 
-        for r in rows:
-            mal_id  = LoadMySQL.to_int(col("MAL_ID", r))
-            if not mal_id:  # skip bad rows
+                    batch.append((mal, uid, rating))
+
+                except Exception:
+                    continue
+
+                if len(batch) >= batch_size:
+                    cur.executemany("""
+                        INSERT INTO anime_user_rating (MAL_ID, userID, user_rating)
+                        VALUES (%s, %s, %s)
+                        ON DUPLICATE KEY UPDATE
+                            user_rating = VALUES(user_rating)
+                    """, batch)
+                    conn.commit()
+                    total += len(batch)
+                    print(f"Committed {total:,} rows...")
+                    batch.clear()
+
+        # Final batch
+        if batch:
+            cur.executemany("""
+                INSERT INTO anime_user_rating (MAL_ID, userID, user_rating)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    user_rating = VALUES(user_rating)
+            """, batch)
+            conn.commit()
+            total += len(batch)
+            print(f"Committed {total:,} rows...")
+
+        # Re-enable keys
+        cur.execute("ALTER TABLE anime_user_rating ENABLE KEYS")
+        cur.execute("SET FOREIGN_KEY_CHECKS = 1")
+        conn.commit()
+
+        cur.close()
+        print(f"\n=== DONE: Loaded {total:,} rating rows ===\n")
+
+    # ----------------------------------------------------------------------
+
+    def load_score_distribution(self, df_anime):
+        """
+        Loads Score-1 ... Score-10 → score_1 ... score_10
+        Uses batching to avoid MySQL lock.
+        """
+        print("\n=== Loading score distributions (batched) ===")
+
+        conn = self.db.get_mysql_connection()
+        cur = self.db.get_mysql_cursor()
+
+        source_cols = [f"Score-{i}" for i in range(1, 11)]
+        target_cols = [f"score_{i}" for i in range(1, 11)]
+
+        # SET clause
+        set_clause = ", ".join([f"{t}=%s" for t in target_cols])
+        sql = f"UPDATE anime_statistics SET {set_clause} WHERE MAL_ID=%s"
+
+        updates = []
+        for _, r in df_anime.iterrows():
+            mal_id = int(r["MAL_ID"])
+            dist = [r.get(f"Score-{i}", None) for i in range(1, 11)]
+            updates.append(dist + [mal_id])
+
+        batch_size = 100
+        done = 0
+
+        # BATCHED UPDATE
+        for i in range(0, len(updates), batch_size):
+            batch = updates[i:i + batch_size]
+            cur.executemany(sql, batch)
+            conn.commit()
+            done += len(batch)
+            print(f"Committed {done}/{len(updates)}")
+
+        print("Score distribution updated.")
+        cur.close()
+
+    def load_watching_status(self):
+
+        print("\n=== Loading watching_status lookup ===")
+
+        conn = self.db.get_mysql_connection()
+        cur = conn.cursor()
+
+        statuses = [
+            (1, "Watching"),
+            (2, "Completed"),
+            (3, "On-Hold"),
+            (4, "Dropped"),
+            (5, "Plan to Watch"),
+            (6, "Unknown")
+        ]
+
+        sql = """
+            INSERT INTO watching_status (watching_statusID, watching_status)
+            VALUES (%s, %s)
+            ON DUPLICATE KEY UPDATE watching_status=VALUES(watching_status)
+        """
+
+        cur.executemany(sql, statuses)
+        conn.commit()
+        cur.close()
+
+        print("watching_status table populated.")
+
+    def load_animelist(self):
+        """
+        Load animelist.csv into anime_user_rating in a safe, CHECK-compatible way.
+        - rating = 0 → NULL
+        - rating outside 1-10 → NULL
+        - missing watching_status → NULL
+        - missing watched_episodes → NULL
+        """
+
+        print("\n=== Loading animelist.csv ===")
+
+        df = self.read_csv("animelist")
+
+        print("Normalizing records...")
+
+        # normalization
+        df = df[["user_id", "anime_id", "rating", "watching_status", "watched_episodes"]]
+
+        BATCH = 5000
+        total_rows = len(df)
+        processed = 0
+
+        sql = """
+            INSERT INTO anime_user_rating (
+                userID, MAL_ID, user_rating, watching_statusID, watched_episodes
+            )
+            VALUES (%s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                user_rating = VALUES(user_rating),
+                watching_statusID = VALUES(watching_statusID),
+                watched_episodes = VALUES(watched_episodes)
+        """
+
+        conn = self.db.get_mysql_connection()
+        cur = conn.cursor()
+
+        batch = []
+
+        for idx, row in df.iterrows():
+
+            user_id = row["user_id"]
+            mal_id = row["anime_id"]
+
+            # --- RATING FIX: 0 => NULL ---
+            raw_rating = row["rating"]
+            rating = None
+
+            try:
+                if pd.notna(raw_rating):
+                    r = int(raw_rating)
+                    if 1 <= r <= 10:
+                        rating = r
+                    # r = 0 → NULL
+            except:
+                rating = None
+
+            # --- WATCHING_STATUS ---
+            ws = row["watching_status"]
+            try:
+                ws = int(ws) if pd.notna(ws) else None
+            except:
+                ws = None
+
+            # --- WATCHED_EPISODES ---
+            we = row["watched_episodes"]
+            try:
+                we = int(we) if pd.notna(we) else None
+            except:
+                we = None
+
+            batch.append((user_id, mal_id, rating, ws, we))
+
+            if len(batch) >= BATCH:
+                try:
+                    cur.executemany(sql, batch)
+                    conn.commit()
+                except mysql.connector.Error as e:
+                    print("ERROR in batch:", e)
+                    print("Last row:", batch[-1])
+                    raise
+
+                processed += len(batch)
+                print(f"Committed {processed}/{total_rows} rows...")
+                batch = []
+
+        # commit last batch
+        if batch:
+            cur.executemany(sql, batch)
+            conn.commit()
+            processed += len(batch)
+
+        print(f"=== DONE: Loaded {processed} rows into anime_user_rating ===")
+
+        cur.close()
+        conn.close()
+
+
+    def optimize_all_tables(self):
+        """
+        Runs ANALYZE + OPTIMIZE for all tables safely.
+        Fixes 'Unread result found' by draining result sets.
+        """
+
+        print("\n============================")
+        print("   OPTIMIZING ALL TABLES")
+        print("============================\n")
+
+        conn = self.db.get_mysql_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SHOW TABLES")
+        tables = [row[0] for row in cursor.fetchall()]
+
+        print(f"Found {len(tables)} tables:")
+        for t in tables:
+            print(f" - {t}")
+
+        print("\nStarting ANALYZE + OPTIMIZE...\n")
+
+        for table in tables:
+            print(f"\n--- Processing {table} ---")
+
+            # ANALYZE TABLE
+            try:
+                cursor.execute(f"ANALYZE TABLE {table}")
+                self._drain_results(cursor)
+                print(f"ANALYZE {table} - OK")
+            except Exception as e:
+                print(f"ANALYZE {table} - ERROR: {e}")
+
+            # OPTIMIZE TABLE
+            try:
+                cursor.execute(f"OPTIMIZE TABLE {table}")
+                self._drain_results(cursor)
+                print(f"OPTIMIZE {table} - OK")
+            except Exception as e:
+                print(f"OPTIMIZE {table} - ERROR: {e}")
+
+        cursor.close()
+
+        print("\n============================")
+        print("     OPTIMIZATION DONE")
+        print("============================\n")
+
+
+    def _drain_results(self, cursor):
+        """Consume all unread result sets from ANALYZE/OPTIMIZE."""
+        try:
+            while True:
+                if cursor.with_rows:
+                    cursor.fetchall()  # flush rows
+                if not cursor.nextset():
+                    break
+        except Exception:
+            pass
+
+       
+
+
+    #----------------------------------------------------------------------------------
+    # CRUTCHES 
+    def ensure_lookup_value(self, table, column, value):
+        """Insert lookup value if not exists; return existing or new PK."""
+        conn = self.db.get_mysql_connection()
+        cur = conn.cursor()
+
+        # Check if exists
+        cur.execute(
+            f"SELECT {table}ID FROM {table} WHERE {column} = %s",
+            (value,)
+        )
+        row = cur.fetchone()
+        if row:
+            cur.close()
+            return row[0]
+
+        # Insert new
+        cur.execute(
+            f"INSERT INTO {table} ({column}) VALUES (%s)",
+            (value,)
+        )
+        conn.commit()
+        new_id = cur.lastrowid
+
+        cur.close()
+        return new_id
+
+    
+    def ensure_default_lookup_values(self):
+        print("\n=== Ensuring default lookup values in lookup tables ===")
+
+        lookups = [
+            ("producer", "producer", ["Unknown"]),
+            ("licensor", "licensor", ["Unknown"]),
+            ("studio", "studio", ["Unknown", "OZ"]),
+        ]
+
+        for table, column, values in lookups:
+            for value in values:
+                pk = self.ensure_lookup_value(table, column, value)
+                print(f"{table}: '{value}' - ID {pk}")
+
+
+    def update_rank(self, csv_path):
+        """
+        Loads rank field from anime.csv into anime_statistics.rank
+        CSV must contain: MAL_ID, Rank (may be 'Unknown')
+        """
+        print("\n=== Updating anime_statistics.rank from CSV ===")
+
+        df = pd.read_csv(csv_path)
+
+        if "MAL_ID" not in df.columns or "Ranked" not in df.columns:
+            print("ERROR: CSV must contain MAL_ID and Ranked columns")
+            return
+
+        conn = self.db.get_mysql_connection()
+        cur = conn.cursor()
+
+        sql = """
+            UPDATE anime_statistics
+            SET `rank` = %s
+            WHERE MAL_ID = %s
+        """
+
+        batch = []
+        for _, row in df.iterrows():
+            mal_id = row["MAL_ID"]
+            ranked = row["Ranked"]
+
+            if pd.isna(mal_id):
                 continue
 
-            name    = LoadMySQL.clean_str(col("Name", r))
-            episodes= LoadMySQL.to_int(col("Episodes", r))
-            aired   = LoadMySQL.clean_str(col("Aired", r))
-            premiered = LoadMySQL.clean_str(col("Premiered", r))
-            duration = LoadMySQL.clean_str(col("Duration", r))
+            # Convert "Unknown" → None
+            if isinstance(ranked, str) and ranked.lower() == "unknown":
+                ranked = None
 
-            # lookups single-valued
-            type_val   = LoadMySQL.clean_str(col("Type", r))
-            type_id    = LoadMySQL.get_id(cursor, "type", "typeID", "type", type_val, type_cache) if type_val else None
+            # Convert float to int
+            if isinstance(ranked, float):
+                if pd.isna(ranked):
+                    ranked = None
+                else:
+                    ranked = int(ranked)
 
-            source_val = LoadMySQL.clean_str(col("Source", r))
-            source_id  = LoadMySQL.get_id(cursor, "source", "sourceID", "source", source_val, source_cache) if source_val else None
+            batch.append((ranked, int(mal_id)))
 
-            age_val    = LoadMySQL.clean_str(col("Rating", r)) or LoadMySQL.clean_str(col("age_rating", r))
-            age_id     = LoadMySQL.get_id(cursor, "age_rating", "age_ratingID", "age_rating", age_val, age_cache) if age_val else None
+        # Execute in batches
+        batch_size = 500
+        for i in range(0, len(batch), batch_size):
+            cur.executemany(sql, batch[i:i+batch_size])
+            conn.commit()
+            print(f"Committed {i+len(batch[i:i+batch_size])}/{len(batch)} rows")
 
-            # upsert anime
-            anime_batch.append((
-                mal_id, name, episodes, aired, premiered, duration, source_id, type_id, age_id
-            ))
+        cur.close()
+        print("Rank update complete.")
 
-            # stats (denormalized snapshot in anime_statistics)
-            stats_batch.append((
-                mal_id,
-                LoadMySQL.to_float2(col("Score", r)),
-                LoadMySQL.to_int(col("Rank", r)),
-                LoadMySQL.to_int(col("Popularity", r)),
-                LoadMySQL.to_int(col("Members", r)),
-                LoadMySQL.to_int(col("Favorites", r)),
-                LoadMySQL.to_int(col("Watching", r)),
-                LoadMySQL.to_int(col("Completed", r)),
-                LoadMySQL.to_int(col("On-Hold", r)) or LoadMySQL.to_int(col("On_Hold", r)),
-                LoadMySQL.to_int(col("Dropped", r)),
-                LoadMySQL.to_int(col("Plan to Watch", r)) or LoadMySQL.to_int(col("Plan_to_Watch", r))
-            ))
+    def load_licensors_from_csv(self, csv_path="data/anime.csv"):
+        """
+        Loads licensors from anime.csv into:
+        - licensor lookup table
+        - anime_licensor bridge table
+        Does NOT delete existing rows, only inserts missing values.
+        Safe to run multiple times.
+        """
 
-            # multi-valued lists -> lookups + bridges
-            for g in LoadMySQL.split_list(col("Genres", r)):
-                gid = LoadMySQL.get_id(cursor, "genre", "genreID", "genre", g, genre_cache)
-                gen_bridge.append((mal_id, gid))
+        print("\n=== Loading licensors from anime.csv ===")
 
-            for st in LoadMySQL.split_list(col("Studios", r)):
-                sid = LoadMySQL.get_id(cursor, "studio", "studioID", "studio", st, studio_cache)
-                st_bridge.append((mal_id, sid))
+        # Read dataset
+        df = pd.read_csv(csv_path)
 
-            for pr in LoadMySQL.split_list(col("Producers", r)):
-                pid = LoadMySQL.get_id(cursor, "producer", "producerID", "producer", pr, producer_cache)
-                prod_bridge.append((mal_id, pid))
+        # Check columns
+        if "MAL_ID" not in df.columns or "Licensors" not in df.columns:
+            print("ERROR: anime.csv missing required columns (MAL_ID, Licensors)")
+            return
 
-            for lc in LoadMySQL.split_list(col("Licensors", r)):
-                lid = LoadMySQL.get_id(cursor, "licensor", "licensorID", "licensor", lc, licensor_cache)
-                lic_bridge.append((mal_id, lid))
+        conn = self.db.get_mysql_connection()
+        cur = conn.cursor()
 
-            if len(anime_batch) >= batch_size:
-                cursor.executemany("""
-                    INSERT INTO anime (MAL_ID, name, episodes, aired, premiered, duration, sourceID, typeID, age_ratingID)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                    ON DUPLICATE KEY UPDATE
-                    name=VALUES(name), episodes=VALUES(episodes), aired=VALUES(aired),
-                    premiered=VALUES(premiered), duration=VALUES(duration),
-                    sourceID=VALUES(sourceID), typeID=VALUES(typeID), age_ratingID=VALUES(age_ratingID)
-                """, anime_batch)
-                n_anime += len(anime_batch); anime_batch.clear()
+        total_links = 0
+        total_new_licensors = 0
 
-            if len(stats_batch) >= batch_size:
-                cursor.executemany("""
-                    INSERT INTO anime_statistics
-                    (MAL_ID, score, `rank`, popularity, members, favorites, watching, completed, on_hold, dropped, plan_to_watch)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                    ON DUPLICATE KEY UPDATE
-                    score=VALUES(score), `rank`=VALUES(`rank`), popularity=VALUES(popularity),
-                    members=VALUES(members), favorites=VALUES(favorites),
-                    watching=VALUES(watching), completed=VALUES(completed),
-                    on_hold=VALUES(on_hold), dropped=VALUES(dropped), plan_to_watch=VALUES(plan_to_watch)
-                """, stats_batch)
-                n_stats += len(stats_batch); stats_batch.clear()
+        for idx, row in df.iterrows():
+            mal_id = row.get("MAL_ID")
+            raw = row.get("Licensors")
 
-            # Bridges batched
-            if len(gen_bridge) >= batch_size:
-                cursor.executemany("INSERT IGNORE INTO anime_genre (MAL_ID, genreID) VALUES (%s,%s)", gen_bridge)
-                n_gen += len(gen_bridge); gen_bridge.clear()
+            # Skip missing rows
+            if pd.isna(mal_id) or pd.isna(raw):
+                continue
 
-            if len(st_bridge) >= batch_size:
-                cursor.executemany("INSERT IGNORE INTO anime_studio (MAL_ID, studioID) VALUES (%s,%s)", st_bridge)
-                n_st += len(st_bridge); st_bridge.clear()
+            # Normalize string
+            raw = str(raw).strip()
+            if raw in ("", "Unknown", "None", "Nan", "nan"):
+                continue
 
-            if len(prod_bridge) >= batch_size:
-                cursor.executemany("INSERT IGNORE INTO anime_producer (MAL_ID, producerID) VALUES (%s,%s)", prod_bridge)
-                n_prod += len(prod_bridge); prod_bridge.clear()
+            # Split licensors into list
+            parts = [x.strip() for x in raw.split(",") if x.strip()]
+            if not parts:
+                continue
 
-            if len(lic_bridge) >= batch_size:
-                cursor.executemany("INSERT IGNORE INTO anime_licensor (MAL_ID, licensorID) VALUES (%s,%s)", lic_bridge)
-                n_lic += len(lic_bridge); lic_bridge.clear()
+            for lic in parts:
 
-        # flush remaining
-        if anime_batch:
-            cursor.executemany("""
-                INSERT INTO anime (MAL_ID, name, episodes, aired, premiered, duration, sourceID, typeID, age_ratingID)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ON DUPLICATE KEY UPDATE
-                name=VALUES(name), episodes=VALUES(episodes), aired=VALUES(aired),
-                premiered=VALUES(premiered), duration=VALUES(duration),
-                sourceID=VALUES(sourceID), typeID=VALUES(typeID), age_ratingID=VALUES(age_ratingID)
-            """, anime_batch)
-            n_anime += len(anime_batch)
+                # Insert licensor into lookup (if new)
+                cur.execute("""
+                    INSERT IGNORE INTO licensor (licensor)
+                    VALUES (%s)
+                """, (lic,))
+                if cur.rowcount > 0:
+                    total_new_licensors += 1
 
-        if stats_batch:
-            cursor.executemany("""
-                INSERT INTO anime_statistics
-                (MAL_ID, score, `rank`, popularity, members, favorites, watching, completed, on_hold, dropped, plan_to_watch)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ON DUPLICATE KEY UPDATE
-                score=VALUES(score), `rank`=VALUES(`rank`), popularity=VALUES(popularity),
-                members=VALUES(members), favorites=VALUES(favorites),
-                watching=VALUES(watching), completed=VALUES(completed),
-                on_hold=VALUES(on_hold), dropped=VALUES(dropped), plan_to_watch=VALUES(plan_to_watch)
-            """, stats_batch)
-            n_stats += len(stats_batch)
+                # Retrieve licensorID
+                cur.execute("SELECT licensorID FROM licensor WHERE licensor=%s", (lic,))
+                res = cur.fetchone()
+                if not res:
+                    print(f"ERROR: licensor '{lic}' missing in lookup table.")
+                    continue
+                lic_id = res[0]
 
-        if gen_bridge:
-            cursor.executemany("INSERT IGNORE INTO anime_genre (MAL_ID, genreID) VALUES (%s,%s)", gen_bridge)
-            n_gen += len(gen_bridge)
-        if st_bridge:
-            cursor.executemany("INSERT IGNORE INTO anime_studio (MAL_ID, studioID) VALUES (%s,%s)", st_bridge)
-            n_st += len(st_bridge)
-        if prod_bridge:
-            cursor.executemany("INSERT IGNORE INTO anime_producer (MAL_ID, producerID) VALUES (%s,%s)", prod_bridge)
-            n_prod += len(prod_bridge)
-        if lic_bridge:
-            cursor.executemany("INSERT IGNORE INTO anime_licensor (MAL_ID, licensorID) VALUES (%s,%s)", lic_bridge)
-            n_lic += len(lic_bridge)
+                # Insert into bridge table
+                cur.execute("""
+                    INSERT IGNORE INTO anime_licensor (MAL_ID, licensorID)
+                    VALUES (%s, %s)
+                """, (int(mal_id), lic_id))
 
-        connection.commit()
-        cursor.close(); connection.close()
-        print(f"anime upserted: {n_anime}, stats: {n_stats}, links — genres:{n_gen} studios:{n_st} producers:{n_prod} licensors:{n_lic}")
+                if cur.rowcount > 0:
+                    total_links += 1
 
-# ---------- LOAD 2 ----------
-# 02_load_users_and_ratings
-# - autocommit=True (without long transactions)
-# - ensure users before facts
-# - validate MAL_ID against anime
-# - validate watching_statusID against lookup; unknown/0 -> NULL
+            # Commit every 500 rows to speed up
+            if idx % 500 == 0:
+                conn.commit()
+                print(f"Processed {idx}/{len(df)} rows...")
 
-# ---------- LOOKUPS FROM DB ----------
-    def load_known_anime_ids(cursor):
-        cursor.execute("SELECT MAL_ID FROM anime")
-        return {row[0] for row in cursor.fetchall()}
+        conn.commit()
 
-    def load_known_status_ids(cursor):
-        cursor.execute("SELECT watching_statusID FROM watching_status")
-        return {row[0] for row in cursor.fetchall()}
+        print("\n=== DONE ===")
+        print(f"New licensors added: {total_new_licensors}")
+        print(f"Bridge rows inserted: {total_links}")
+        print("====================================\n")
 
-    # ---------- LOAD lookup files ----------
-    def upsert_watching_status(cursor):
-        """Load watching_status.csv if present."""
-        if not os.path.exists(LoadMySQL.watching_status_csv):
-            return 0
+        cur.close()
+
+    # =============================================================
+    #   LOAD STUDIOS (anime_studio)
+    # =============================================================
+    def load_studios_from_csv(self, csv_path="data/anime.csv", batch_size=1000):
+
+        print("\n=== Loading studios from anime.csv ===")
+
+        conn = self.db.get_mysql_connection()
+        cur = conn.cursor()
+
+        df = pd.read_csv(csv_path)
+
         rows = []
-        with open(LoadMySQL.watching_status_csv, encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for r in reader:
-                sid = LoadMySQL.to_int_safe(r.get("status_id"))
-                status = (r.get("status") or "").strip()
-                if sid is None or not status:
+        new_studios = 0
+        new_bridge_rows = 0
+
+        for i, row in df.iterrows():
+            mal_id = row.get("MAL_ID")
+            studios = row.get("Studios")
+
+            if pd.isna(mal_id) or pd.isna(studios):
+                continue
+
+            studio_list = [s.strip() for s in str(studios).split(",") if s.strip()]
+
+            for studio in studio_list:
+
+                # skip useless / empty
+                if studio in ("None found", "Unknown", ""):
                     continue
-                rows.append((sid, status))
-        if rows:
-            cursor.executemany(
-                "INSERT INTO watching_status (watching_statusID, watching_status) VALUES (%s,%s) "
-                "ON DUPLICATE KEY UPDATE watching_status=VALUES(watching_status)",
-                rows
-            )
-        return len(rows)
 
-    def insert_users_from_users_csv(cursor, batch_users: int = 10000):
-        if not os.path.exists(LoadMySQL.users_csv):
-            return 0
-        buf, total = [], 0
-        with open(LoadMySQL.users_csv, encoding="utf-8") as f:
-            for r in csv.DictReader(f):
-                uid = LoadMySQL.to_int_safe(r.get("user_id") or r.get("userID"))
-                if uid is None:
-                    continue
-                buf.append((uid,))
-                if len(buf) >= batch_users:
-                    cursor.executemany("INSERT IGNORE INTO users (userID) VALUES (%s)", buf)
-                    total += len(buf); buf.clear()
-        if buf:
-            cursor.executemany("INSERT IGNORE INTO users (userID) VALUES (%s)", buf)
-            total += len(buf)
-        return total
+                # insert studio into lookup if missing
+                cur.execute("SELECT studioID FROM studio WHERE studio=%s", (studio,))
+                r = cur.fetchone()
 
-    def collect_user_ids_from_file(path):
-        users = set()
-        with open(path, encoding="utf-8") as f:
-            for r in csv.DictReader(f):
-                uid = LoadMySQL.to_int_safe(r.get("user_id") or r.get("userID"))
-                if uid is not None:
-                    users.add(uid)
-        return users
+                if not r:
+                    cur.execute("INSERT INTO studio (studio) VALUES (%s)", (studio,))
+                    conn.commit()
+                    new_studios += 1
+                    studio_id = cur.lastrowid
+                else:
+                    studio_id = r[0]
 
-    def ensure_users_for_source(cursor, source_path, batch_users: int = 10000):
-        if not os.path.exists(source_path):
-            return 0
-        users = sorted(LoadMySQL.collect_user_ids_from_file(source_path))
-        total, buf = 0, []
-        for uid in users:
-            buf.append((uid,))
-            if len(buf) >= batch_users:
-                cursor.executemany("INSERT IGNORE INTO users (userID) VALUES (%s)", buf)
-                total += len(buf); buf.clear()
-        if buf:
-            cursor.executemany("INSERT IGNORE INTO users (userID) VALUES (%s)", buf)
-            total += len(buf)
-        return total
+                # add bridge row
+                rows.append((int(mal_id), int(studio_id)))
 
-    # ---------- FACT LOADERS ----------
-    def load_ratings_from_animelist(cursor, known_anime, known_status, batch_ratings: int = 5000):
+            # log progress
+            if i % 2000 == 0:
+                print(f"Processed {i}/{len(df)} rows...")
+
+        # Insert into anime_studio bridge table
+        sql = """
+            INSERT IGNORE INTO anime_studio (MAL_ID, studioID)
+            VALUES (%s, %s)
         """
-        animelist.csv: user_id, anime_id, rating, watching_status, watched_episodes
-        - rating 0 -> NULL
-        - watching_status not in lookup (including 0) -> NULL
-        """
-        if not os.path.exists(LoadMySQL.animelist_csv):
-            return 0
-        cnt, batch, unknown_ws = 0, [], 0
 
-        with open(LoadMySQL.animelist_csv, encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for r in reader:
-                uid = LoadMySQL.to_int_safe(r.get("user_id") or r.get("userID"))
-                aid = LoadMySQL.to_int_safe(r.get("anime_id") or r.get("MAL_ID"))
-                if uid is None or aid is None or aid not in known_anime:
+        for i in range(0, len(rows), batch_size):
+            batch = rows[i:i+batch_size]
+            cur.executemany(sql, batch)
+            conn.commit()
+            new_bridge_rows += cur.rowcount
+
+        print("\n=== DONE ===")
+        print(f"New studios added: {new_studios}")
+        print(f"Bridge rows inserted: {new_bridge_rows}")
+        print("====================================\n")
+
+
+    # =============================================================
+    #   LOAD PRODUCERS (anime_producer)
+    # =============================================================
+    def load_producers_from_csv(self, csv_path="data/anime.csv", batch_size=1000):
+
+        print("\n=== Loading producers from anime.csv ===")
+
+        conn = self.db.get_mysql_connection()
+        cur = conn.cursor()
+
+        df = pd.read_csv(csv_path)
+
+        rows = []
+        new_producers = 0
+        new_bridge_rows = 0
+
+        for i, row in df.iterrows():
+            mal_id = row.get("MAL_ID")
+            producers = row.get("Producers")
+
+            if pd.isna(mal_id) or pd.isna(producers):
+                continue
+
+            prod_list = [p.strip() for p in str(producers).split(",") if p.strip()]
+
+            for producer in prod_list:
+
+                if producer in ("None found", "Unknown", ""):
                     continue
 
-                rating = LoadMySQL.to_int_safe(r.get("rating") or r.get("score"))
-                if rating is not None and rating == 0:
-                    rating = None
+                # insert into lookup if missing
+                cur.execute("SELECT producerID FROM producer WHERE producer=%s", (producer,))
+                r = cur.fetchone()
 
-                ws = LoadMySQL.to_int_safe(r.get("watching_status"))
-                if ws is None or ws not in known_status:
-                    ws = None
-                    unknown_ws += 1
+                if not r:
+                    cur.execute("INSERT INTO producer (producer) VALUES (%s)", (producer,))
+                    conn.commit()
+                    new_producers += 1
+                    producer_id = cur.lastrowid
+                else:
+                    producer_id = r[0]
 
-                we = LoadMySQL.to_int_safe(r.get("watched_episodes"))
+                rows.append((int(mal_id), int(producer_id)))
 
-                batch.append((aid, uid, rating, ws, we))
+            if i % 2000 == 0:
+                print(f"Processed {i}/{len(df)} rows...")
 
-                if len(batch) >= batch_ratings:
-                    batch.sort(key=lambda x: (x[1], x[0]))
-                    cursor.executemany("""
-                        INSERT INTO anime_user_rating (MAL_ID, userID, user_rating, watching_statusID, watched_episodes)
-                        VALUES (%s,%s,%s,%s,%s)
-                        ON DUPLICATE KEY UPDATE
-                        user_rating=COALESCE(VALUES(user_rating), user_rating),
-                        watching_statusID=COALESCE(VALUES(watching_statusID), watching_statusID),
-                        watched_episodes=COALESCE(VALUES(watched_episodes), watched_episodes)
-                    """, batch)
-                    cnt += len(batch); batch.clear()
-
-        if batch:
-            batch.sort(key=lambda x: (x[1], x[0]))
-            cursor.executemany("""
-                INSERT INTO anime_user_rating (MAL_ID, userID, user_rating, watching_statusID, watched_episodes)
-                VALUES (%s,%s,%s,%s,%s)
-                ON DUPLICATE KEY UPDATE
-                user_rating=COALESCE(VALUES(user_rating), user_rating),
-                watching_statusID=COALESCE(VALUES(watching_statusID), watching_statusID),
-                watched_episodes=COALESCE(VALUES(watched_episodes), watched_episodes)
-            """, batch)
-            cnt += len(batch)
-
-        if unknown_ws:
-            print(f"Note: {unknown_ws} rows had unknown/zero watching_status -> stored as NULL.")
-        return cnt
-
-    def load_ratings_from_rating_complete(cursor, known_anime, batch_ratings: int = 5000):
+        # insert into anime_producer
+        sql = """
+            INSERT IGNORE INTO anime_producer (MAL_ID, producerID)
+            VALUES (%s, %s)
         """
-        rating_complete.csv: user_id, anime_id, rating (1..10)
-        """
-        if not os.path.exists(LoadMySQL.rating_complete_csv):
-            return 0
-        cnt, batch = 0, []
 
-        with open(LoadMySQL.rating_complete_csv, encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for r in reader:
-                uid = LoadMySQL.to_int_safe(r.get("user_id") or r.get("userID"))
-                aid = LoadMySQL.to_int_safe(r.get("anime_id") or r.get("MAL_ID"))
-                rating = LoadMySQL.to_int_safe(r.get("rating") or r.get("score"))
-                if uid is None or aid is None or rating is None or rating == 0:
-                    continue
-                if aid not in known_anime:
-                    continue
+        for i in range(0, len(rows), batch_size):
+            batch = rows[i:i+batch_size]
+            cur.executemany(sql, batch)
+            conn.commit()
+            new_bridge_rows += cur.rowcount
 
-                batch.append((aid, uid, rating))
+        print("\n=== DONE ===")
+        print(f"New producers added: {new_producers}")
+        print(f"Bridge rows inserted: {new_bridge_rows}")
+        print("====================================\n")
 
-                if len(batch) >= batch_ratings:
-                    batch.sort(key=lambda x: (x[1], x[0]))
-                    cursor.executemany("""
-                        INSERT INTO anime_user_rating (MAL_ID, userID, user_rating)
-                        VALUES (%s,%s,%s)
-                        ON DUPLICATE KEY UPDATE user_rating=VALUES(user_rating)
-                    """, batch)
-                    cnt += len(batch); batch.clear()
 
-        if batch:
-            batch.sort(key=lambda x: (x[1], x[0]))
-            cursor.executemany("""
-                INSERT INTO anime_user_rating (MAL_ID, userID, user_rating)
-                VALUES (%s,%s,%s)
-                ON DUPLICATE KEY UPDATE user_rating=VALUES(user_rating)
-            """, batch)
-            cnt += len(batch)
 
-        return cnt
 
-    def load_users_and_ratings_and_watching_status(batch_users: int = 10000, batch_ratings: int = 5000):
-        
-        if not os.path.exists(MySQLTools.users_csv):
-            raise FileNotFoundError(MySQLTools.users_csv)
-        if not os.path.exists(MySQLTools.animelist_csv):
-            raise FileNotFoundError(MySQLTools.animelist_csv)
-        if not os.path.exists(MySQLTools.rating_complete_csv):
-            raise FileNotFoundError(MySQLTools.rating_complete_csv)
-        if not os.path.exists(MySQLTools.watching_status_csv):
-            raise FileNotFoundError(MySQLTools.watching_status_csv)
-        
-        connection = MySQLTools.__init__.self.connection
-        connection.autocommit = True
-        cursor = connection.cursor()
 
-        # session setup
-        cursor.execute("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
-        cursor.execute("SET SESSION innodb_lock_wait_timeout = 50")
 
-        # lookup from db
-        known_anime = LoadMySQL.load_known_anime_ids(cursor)
-        print("known anime:", len(known_anime))
 
-        # watching_status.csv (if exists)
-        ws_loaded = LoadMySQL.upsert_watching_status(cursor)
-        known_status = LoadMySQL.load_known_status_ids(cursor)
-        print("watching_status upserted:", ws_loaded, "known statuses:", sorted(known_status))
 
-        # users from users.csv (if exist)
-        u_from_users = LoadMySQL.insert_users_from_users_csv(cursor)
-        print("users from users.csv inserted/ignored:", u_from_users)
 
-        # ensure users from retings sourse + load facts
-        if os.path.exists(LoadMySQL.animelist_csv):
-            added = LoadMySQL.ensure_users_for_source(cursor, LoadMySQL.animelist_csv)
-            print("ensured users from animelist.csv:", added)
-            n = LoadMySQL.load_ratings_from_animelist(cursor, known_anime, known_status)
-            print("animelist rows upserted:", n)
-        elif os.path.exists(LoadMySQL.rating_complete_csv):
-            added = LoadMySQL.ensure_users_for_source(cursor, LoadMySQL.rating_complete_csv)
-            print("ensured users from rating_complete.csv:", added)
-            n = LoadMySQL.load_ratings_from_rating_complete(cursor, known_anime)
-            print("rating_complete rows upserted:", n)
-        else:
-            print("No ratings file found (expected animelist.csv or rating_complete.csv).")
 
-        connection.commit()
-        cursor.close(); connection.close()
-        print("Done.")
+
