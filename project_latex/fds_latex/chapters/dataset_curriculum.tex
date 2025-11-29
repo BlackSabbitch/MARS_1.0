@@ -1,0 +1,41 @@
+% !TeX root = ../main.tex
+
+\section{Dataset and Initial Exploration}
+
+For the analytical part of this project, we use the \textit{Anime Recommendation Database 2020} from Kaggle, which combines metadata about anime titles with large-scale user rating data. The dataset contains over 12{,}000 anime entries and more than 73{,}000 users, resulting in approximately 7.8 million individual rating interactions. This structure naturally splits the data into two main tables:
+
+\begin{itemize}
+    \item \textbf{Anime information:} title, genres, type (TV, movie, OVA), number of episodes, release year, studio, popularity metrics, and short descriptions.
+    \item \textbf{User ratings:} user identifiers and their numeric ratings for specific anime.
+\end{itemize}
+
+At first glance, the data appears rich and diverse, but it also reflects several typical characteristics of real-world datasets:
+
+\begin{itemize}
+    \item \textbf{Incomplete records:} many anime lack a release year, genre tags, or episode counts.  
+    \item \textbf{Inconsistent categorical data:} genre lists differ in formatting and ordering; some entries use non-standard tags.  
+    \item \textbf{Long-tailed distributions:} a small number of highly popular anime dominate ratings, while the majority receive very few.  
+    \item \textbf{Sparse user behavior:} most users rate only a tiny fraction of available titles.  
+\end{itemize}
+
+These properties are not defects; they represent the typical landscape of large, user-generated media datasets. They also motivate several of the analytical directions in this project, such as identifying rating patterns, studying genre clusters, and modeling the structure of user–anime interactions.
+
+\subsection*{Synthetic Users and Locations}
+
+The original dataset does not contain geographic or demographic information about users. To explore cross-cultural and regional patterns, we generate synthetic user metadata. Each user is assigned a plausible location (country and optionally city), following real-world population distributions. This augmented dataset allows us to ask new types of questions, such as whether certain genres correlate with specific geographic regions, or whether user communities cluster differently across countries.
+
+The synthetic data is clearly separated from the original records and is used only for exploratory purposes, without affecting the underlying rating matrix.
+
+\subsection*{Data Cleaning}
+
+Before we can meaningfully analyze the data, we must resolve the inconsistencies and structural issues inherited from the raw dataset. This involves:
+
+\begin{itemize}
+    \item normalizing genre representations and splitting multi-genre fields;
+    \item removing or correcting obviously invalid entries (e.g.\ anime with zero episodes released in the 1800s);
+    \item handling missing values through imputation or category-specific defaults;
+    \item joining anime metadata with synthetic user information to form a unified analytical table;
+    \item reducing noise in the user–anime interaction graph by filtering out extremely sparse users or entries.
+\end{itemize}
+
+These preprocessing steps create a clean, analyzable foundation for the exploratory data analysis that follows and ensure that all subsequent insights reflect meaningful patterns rather than artifacts of data collection.

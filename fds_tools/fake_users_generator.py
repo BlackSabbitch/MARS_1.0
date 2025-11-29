@@ -29,7 +29,7 @@ class FakeUsersGenerator:
             pd.DataFrame: A data frame containing country PC distribution data.
         """
         purpose = "myanimelist_countries_distribution"
-        file_path = CommonTools.get_paths()[purpose]
+        file_path = CommonTools.load_csv_files_pathes()[purpose]
         data_frame = PandasTools.load_path(file_path).reset_index(drop=True)
         data_frame["country"] = data_frame["country"].str.strip().str.lower()
         data_frame["country"] = data_frame["country"].str.replace(" ", "_")
@@ -161,7 +161,7 @@ class FakeUsersGenerator:
         # --- age assignment ---
         ages = np.random.normal(loc=Constants.age_mean, scale=Constants.age_std, size=N)
         ages = np.clip(ages, a_min=Constants.infinum_age, a_max=Constants.supremum_age)  # при желании ограничиваем разумный диапазон
-        ages = ages.astype(int)
+        ages = ages.round()
         # --- city assignment ---
         # prepare arrays
         cities = cities_stats['city'].values

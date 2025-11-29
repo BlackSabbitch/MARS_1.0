@@ -1,0 +1,93 @@
+% !TeX root = main.tex
+
+\section{Dataset Overview}
+
+MyAnimeList (MAL) is one of the largest online platforms dedicated to anime and manga tracking. 
+Users maintain personal lists of watched titles, assign numerical ratings, write reviews, and participate in community discussions. 
+
+Although MAL does not represent the entire global audience, it functions as a \emph{large-scale, organically formed social network} structured around media consumption. Its importance for data analysis stems from several factors:
+\begin{itemize}
+    \item it has millions of active users with voluntarily provided preference data;
+    \item users form clusters and communities around genres, studios, eras, and specific titles;
+    \item the rating patterns reflect collective taste dynamics, hype cycles, long-tail phenomena, and cross-cultural differences;
+    \item the anime graph (users $\times$ titles) behaves like a sparse bipartite network with hubs, where highly popular titles act as central connectivity points.
+\end{itemize}
+
+For these reasons, MAL is a valuable source for studying recommendation systems, preference modeling, popularity prediction, and structural patterns of entertainment consumption.
+
+\subsection{Dataset Structure}
+
+We use the 2020 ``Anime Recommendation Database'' from Kaggle, which combines several processed dumps of MyAnimeList:
+\footnote{Where external statistics are used (industry reports, demographic data), and where it is possible, we use sources closest
+to 2020 to maintain temporal consistency.}
+\paragraph{anime.csv} Metadata for approximately 17,000 titles, with columns including:
+\begin{itemize}
+    \item identifiers: \texttt{MAL\_ID}, \texttt{Name}, \texttt{English name}, \texttt{Japanese name};
+    \item quality and popularity metrics: \texttt{Score}, \texttt{Ranked}, \texttt{Popularity}, \texttt{Members}, \texttt{Favorites};
+    \item categorical descriptors: \texttt{Genres}, \texttt{Type}, \texttt{Source}, \texttt{Studios}, \texttt{Producers};
+    \item structural info: \texttt{Episodes}, \texttt{Duration}, \texttt{Rating} (age restriction);
+    \item engagement counters: \texttt{Watching}, \texttt{Completed}, \texttt{Dropped}, etc.;
+    \item per-score vote counts: \texttt{Score-1} $\dots$ \texttt{Score-10}.
+\end{itemize}
+
+\paragraph{anime\_with\_synopsis.csv} A reduced version containing \texttt{MAL\_ID}, \texttt{Name}, \texttt{Score}, \texttt{Genres}, \texttt{Synopsis}. Useful for NLP tasks such as clustering by textual description.
+
+\paragraph{animelist.csv} Contains approximately 300 million user–anime interactions, with columns: \texttt{user\_id}, \texttt{anime\_id}, \texttt{rating}, \texttt{watching\_status}, \texttt{watched\_episodes}. This is the core behavioral dataset representing the user–item matrix.
+
+\paragraph{rating\_complete.csv} A filtered version of \texttt{animelist.csv} containing only rows with \texttt{watching\_status = 2} (``Completed''), columns: \texttt{anime\_id}, \texttt{user\_id}, \texttt{rating}. Commonly used for training recommender systems.
+
+\paragraph{watching\_status.csv} Lookup table pairing each integer code with a textual description (``Currently Watching'', ``Completed'', etc.).
+
+\subsection{Strengths of the Dataset}
+
+Despite being collected from an entertainment platform, the dataset has several significant advantages for data science practice:
+
+\begin{itemize}
+    \item \textbf{Large scale:} Tens of millions of ratings across thousands of titles enable analysis of long-tail
+    distributions, user segmentation, genre-level statistics, and popularity dynamics.
+
+    \item \textbf{Natural heterogeneity of users:} No incentive to game the system; tastes are diverse and clusters form organically.
+
+    \item \textbf{Multiple complementary tables:} Metadata, textual features, and behavioral interactions allow
+    content-based, collaborative, graph-based, and hybrid recommender analyses.
+
+    \item \textbf{Excellent for methodological demonstration:} Useful for data cleaning, exploratory data analysis
+    (EDA), imputation, outlier detection, recommendation algorithms, and metadata fusion with NLP.
+
+\end{itemize}
+
+\subsection{Limitations and Potential Biases}
+
+The dataset reflects behaviors of a specific community and inherits biases from the platform:
+
+\begin{itemize}
+    \item \textbf{Geographical bias:} MAL is most popular in North America, parts of Europe, and Southeast Asia. 
+    For example, China is one of the global leaders in anime licensing \cite{animeindustry2020}, but Chinese
+    users are absent on MAL.
+    
+    \item \textbf{Cultural and language bias:} English-speaking communities dominate the dataset.
+
+    \item \textbf{Sparse user--item matrix:} Most users have watched only a small fraction of all anime; 
+    this affects collaborative filtering model performance and cold-start dynamics.
+
+    \item \textbf{Artifacts and inconsistency in dataset:} Example for \texttt{rating\_complete.csv}:
+    filtering by \texttt{watching\_status = Completed} is not sufficient. Some users marked anime as completed
+    but watched fewer episodes than the total and gave non-zero ratings. Since MAL does not allow rating = 0,
+    zero ratings indicate \emph{no vote} rather than dislike. These cases are rare (\textasciitilde0.1\%)
+    but must be considered during cleaning.
+
+    \item \textbf{No timestamps:} Limits temporal modeling of tastes and popularity.
+
+    \item \textbf{Caution in interpreting popularity:} The dataset reflects preferences of \emph{dedicated fans}
+    rather than the general population. So, MAL ratings and engagement metrics do not directly translate to global popularity.
+    MAL users are biased towards committed anime fans; casual viewers are underrepresented.
+
+    \item \textbf{Licensing bias:} In many regions, anime consumption occurs primarily through piracy,
+    so official licensing or platform metrics severely underestimate actual viewership\footnote{Even in the USA,
+    the leader in licensed anime, nearly half of users watch primarily via unofficial services \cite{animeresearch2020}}.
+
+    \item \textbf{MAL - only one of the biggest anime hubs:} Country-level popularity is not reliably inferable
+    without additional corrections or external data sources; such adjustments are beyond the scope of this project.
+
+    \end{itemize}
+\end{itemize}
