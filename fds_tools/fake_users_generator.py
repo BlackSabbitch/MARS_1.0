@@ -161,7 +161,7 @@ class FakeUsersGenerator:
         # --- age assignment ---
         ages = np.random.normal(loc=Constants.age_mean, scale=Constants.age_std, size=N)
         ages = np.clip(ages, a_min=Constants.infinum_age, a_max=Constants.supremum_age)  # при желании ограничиваем разумный диапазон
-        ages = ages.astype(int)
+        ages = ages.round()
         # --- city assignment ---
         # prepare arrays
         cities = cities_stats['city'].values

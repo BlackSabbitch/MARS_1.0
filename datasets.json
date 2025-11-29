@@ -1,12 +1,12 @@
 {
-  "anime_ranks": {
+  "anime_hernan": {
     "folder": "data/anime_ranks",
     "url": "https://www.kaggle.com/datasets/hernan4444/anime-recommendations-database",
     "year": 2020
   },
-  "anime_timestamps": {
+  "anime_azathoth": {
     "folder": "data/anime_timestamps",
-    "url": "https://www.kaggle.com/datasets/dbdmobile/myanimelist-dataset",
+    "url": "https://www.kaggle.com/datasets/azathoth42/myanimelist",
     "year": 2023
   },
   "country_distribution": {

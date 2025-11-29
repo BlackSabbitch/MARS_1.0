@@ -1,8 +1,13 @@
+import duckdb
+import pandas as pd
+from common_tools import CommonTools
+
+
 class FFF:
     @classmethod
     def find_not_honest_users(cls):
         # Пути к файлам
-        table_names_pathes = cls.load_csv_files_pathes()
+        table_names_pathes = CommonTools.load_csv_files_pathes()
         animelist_path = table_names_pathes['animelist']
         anime_path = table_names_pathes['anime']
         rating_complete_path = table_names_pathes['rating_complete']
@@ -39,7 +44,7 @@ class FFF:
     def clean_for_not_honest_users(cls):
         df_incomplete_votes = cls.find_not_honest_users()
         # Загружаем rating_complete (тут уже можно pandas, он небольшой)
-        table_names_pathes = cls.load_csv_files_pathes()
+        table_names_pathes = CommonTools.load_csv_files_pathes()
         rating_complete_path = table_names_pathes['rating_complete']
         df_rating_complete = pd.read_csv(rating_complete_path)
 
@@ -53,3 +58,19 @@ class FFF:
         # Сохраняем
         df_clean.to_csv('rating_complete_cleaned.csv', index=False)
         print(f"Удалено строк: {len(df_rating_complete) - len(df_clean)}")
+
+    @classmethod
+    def restore_score(cls, df: pd.DataFrame):
+        def restore_score_for_row(row):
+            votes = []
+            for i in range(1, 11):
+                count = row[f"Score-{i}"]
+                if pd.isna(count):
+                    return None
+                votes.append((i, count))
+            total = sum(c for _, c in votes)
+            if total == 0:
+                return None
+            return sum(i * c for i, c in votes) / total
+
+        df['Score_restored'] = df.apply(restore_score_for_row, axis=1)

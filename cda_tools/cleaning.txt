@@ -1,0 +1,10 @@
+cleaner = LocationCleaner()
+
+df = pd.read_csv("users_cleaned.csv")
+
+df["country"] = df["location"].apply(cleaner.clean)
+
+df = cleaner.map_as_unknown(df, column="country", min_count=25)
+
+
+

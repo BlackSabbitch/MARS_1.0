@@ -10,20 +10,57 @@ Python scripts **expect the datasets to be already downloaded** and placed under
 
 ## Project Structure
 
+```
 MARS_1.0/
-├── data/ # All datasets
-│ ├── anime_ranks/
-│ ├── cities_location/
-│ ├── cities_population/
-│ └── anime_timestamps/
-├── datasets.yaml # Dataset metadata
-├── common_tools.py
-├── graph_tools.py
-├── playground.ipynb
-└── README.md
+├── data/
+│   ├── anime_ranks/
+│   │   ├── anime.csv
+│   │   ├── animelist.csv
+│   │   ├── anime_with_synopsis.csv
+│   │   ├── rating_complete.csv
+│   │   └── watching_status.csv
+│   ├── anime_timestamps/
+│   │   └── anime_timestamps.csv
+│   ├── cities_population_and_location/
+│   │   └── cities_population_and_location.csv
+│   ├── myanimelist_countries_distribution/
+│   │   └── myanimelist_countries_distribution.csv
+│   └── users/
+│       └── profiles.csv
+├── db_tools/
+│   ├── ...
+│   └── ...
+├── fds_tools/
+│   ├── __init__.py
+│   ├── data_cleaner.py
+│   ├── fake_user_generator.py (class FakeUsersGenerator)
+│   ├── fds_main.py
+│   └── project_latex/
+│       ├── main.tex
+│       ├── chapters/
+│       │   ├── introduction.tex
+│       │   ├── overview.tex
+│       │   ├── fake_user_generation.tex
+│       │   ├── dataset_curriculum.tex
+│       │   ...
+│       │   └── references.bib        
+│       └── out/
+│           ├── main.pdf
+│           └── ...
+├── cda_tools/
+│   ├── ...
+│   └── ...
+├── __init__.py
+├── .env
+├── .gitignore
+├── common_tools.py (classes CommonTools, PandasTools, DBTools)
+├── datasets.json
+├── LICENSE
+├── README.md
+└── requirements.txt
+```
 
-
-# Setup
+## Setup
+```
 pip install -r requirements.txt
-kaggle.json → ~/.kaggle/
-make data
+```
