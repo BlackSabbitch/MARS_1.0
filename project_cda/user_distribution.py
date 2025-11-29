@@ -1,7 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
-from cda_project.user_data import UserData
+from project_cda.user_data import UserData
 
 
 class UserDistribution:

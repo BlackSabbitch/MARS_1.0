@@ -9,15 +9,15 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from cda_project.graph_io import GraphIO
-from cda_project.graph_actions_ig import GraphActionsIG
-from cda_project.graph_actions_nx import GraphActionsNX
-from cda_project.user_analytics import UserAnalytics
-from cda_project.user_data import UserData
-from cda_project.user_distribution import UserDistribution
+from project_cda.graph_io import GraphIO
+from project_cda.graph_actions_ig import GraphActionsIG
+from project_cda.graph_actions_nx import GraphActionsNX
+from project_cda.user_analytics import UserAnalytics
+from project_cda.user_data import UserData
+from project_cda.user_distribution import UserDistribution
 
-def cda_project_run():
-    print("Start cda_project_run()")
+def project_cda_run():
+    print("Start project_cda_run()")
 
     # print("=== STEP 1 — Initialize UserData ===")
     # ud = UserData()
@@ -101,4 +101,4 @@ def cda_project_run():
 
 if __name__ == "__main__":
             
-    cda_project_run()
+    project_cda_run()
