@@ -65,11 +65,11 @@ MARS_1.0/
 ### 1. virtual environmet installation
 ```
 .../MARS_1.0$ rm -rf .venv  # if there was some before
-.../MARS_1.0$ python3 -m venv *name_of_your_new_venv*
+.../MARS_1.0$ python3 -m venv name_of_your_new_venv
 ```
 ### 2. virtual environment activation
 ```
-.../MARS_1.0$ source *name_of_your_new_venv*/bin/activate
+.../MARS_1.0$ source name_of_your_new_venv/bin/activate
 ```
 ### 2. requirements installation
 ```
