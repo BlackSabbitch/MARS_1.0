@@ -91,13 +91,38 @@ def project_cda_run():
     # anime_graph_2006,
     # GraphActionsNX.get_metrics_dict(anime_graph_2006, graph_name="anime_graph_2006")
     # )
-    anime_graph_2006_path = r"C:\MariaSamosudova\Projects\UNIVER\ADB\Project\MARS_1.0\data\data_cda\graphs\anime_graph_2006.gexf"
+    # anime_graph_2006_path = r"C:\MariaSamosudova\Projects\UNIVER\ADB\Project\MARS_1.0\data\data_cda\graphs\anime_graph_2006.gexf"
+   
     # g = GraphActionsIG.load_gexf_as_igraph(anime_graph_2006_path)   
     # metrics = GraphActionsIG.get_full_metrics_dict(g, graph_name="anime_graph_2006")
     # GraphActionsIG.print_graph_metrics(metrics)
-    GraphIO.convert_graph_to_parquet(anime_graph_2006_path)
+    # GraphIO.convert_graph_to_parquet(anime_graph_2006_path)
 
-    print("=== DONE ===")
+    # Community detection
+    anime_graph_2006_backbone = (
+        r"C:\MariaSamosudova\Projects\UNIVER\ADB\Project\MARS_1.0"
+        r"\data\data_cda\graphs\Graphs_cleaned_95_percentile_backbone_thr_2"
+        r"\anime_graph_2006_backbone.gpickle"
+    )
+
+    graphs_dir = r"C:\MariaSamosudova\Projects\UNIVER\ADB\Project\MARS_1.0\data\data_cda\graphs\Graphs_cleaned_95_percentile_backbone_thr_2\communities"
+
+    # Run community detection for all graphs in the folder
+    # GraphActionsIG.run_community_detection_for_all(graphs_dir)
+    # for fname in os.listdir(graphs_dir):
+    #     if fname.endswith(".pkl") or fname.endswith(".gpickle"):
+    #         full_path = os.path.join(graphs_dir, fname)
+    #         GraphIO.convert_pickle_to_parquet(full_path)
+
+    # print(">>> ENTERED project_cda_run() <<<")
+
+    graphs_dir_communities = r"C:\MariaSamosudova\Projects\UNIVER\ADB\Project\MARS_1.0\data\data_cda\graphs\Graphs_cleaned_95_percentile_backbone_thr_2\communities"
+
+    # 1. Run community detection for all graphs (if needed)
+    # run_community_detection_for_all(graphs_dir)
+
+    # 2. Count communities detected by Leiden and Infomap
+    GraphActionsIG.count_communities_in_folder(graphs_dir_communities)
 
 if __name__ == "__main__":
             
