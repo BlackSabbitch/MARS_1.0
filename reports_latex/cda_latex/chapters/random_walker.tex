@@ -1,0 +1,133 @@
+\section{Random-Walk Model for User Trajectory Simulation}
+
+\subsection{Motivation}
+
+User activity on a large interaction graph can be interpreted as a sequence of 
+transitions between nodes (e.g.\ items, topics, or communities). 
+Given such a sequence for each user, our goal is to construct a 
+probabilistic model that captures the \emph{structural tendencies} of user navigation.
+This model is later used to generate synthetic trajectories---``random walkers''---that
+approximate the observed behavior of the real user. 
+The ensemble of walkers provides a natural way to measure how typical or atypical 
+a given user trajectory is, relative to the structure of the graph.
+
+Because the underlying graph is large (on the order of thousands of nodes and millions 
+of edges), all computations must be local and efficient. 
+We exploit the fact that the graph evolves year by year, so a user trajectory is 
+implicitly aligned with a sequence of yearly graphs.
+
+\subsection{Definition of the Random Walker}
+
+Let $G_t = (V_t, E_t)$ denote the interaction graph in year $t$.  
+For a user $u$ we observe a trajectory
+\[
+    \mathbf{x}^{(u)} = (x_0, x_1, \dots, x_T),
+\]
+where $x_t \in V_t$ is the node visited by the user in year $t$.
+We construct a \emph{random walker} whose behavior in year $t$ is governed only by the 
+local structure of $G_t$ and the user's starting point $x_0$.
+
+Formally, for each year $t$ the walker occupies a state $X_t \in V_t$.
+Conditioned on $X_t = v$, the walker chooses its position in year $t+1$ according to
+a probability distribution over the neighbors of $v$ in $G_t$:
+\[
+    \mathbb{P}(X_{t+1} = w \mid X_t = v)
+    = \frac{1}{\deg_{G_t}(v)}
+    \quad \text{for all } (v,w) \in E_t.
+\]
+That is, the walker performs a uniformly random step along the edges that exist in
+the corresponding yearly graph.
+
+A single random walker generates one synthetic trajectory
+\[
+    \mathbf{Y} = (Y_0, Y_1, \dots, Y_T), \qquad Y_0 = x_0.
+\]
+To model uncertainty and to obtain stable statistical estimates, we simulate
+an ensemble of $K$ independent walkers for each user.
+
+\subsection{Asynchrony and Year-Level Dynamics}
+
+A key detail is that the walkers evolve \emph{asynchronously}.  
+Each walker only moves when the global simulation clock advances to a year in which
+that walker still has remaining steps.  
+This design is necessary because real user trajectories can have different lengths,
+and the yearly graphs $G_t$ may differ substantially in size and connectivity.
+
+Thus the simulation proceeds by iterating over years $t = 0,1,\dots,T$
+and, for each walker whose trajectory length is greater than $t$, performing
+exactly one step in $G_t$.
+Walkers whose length is shorter than the current year simply remain inactive.
+
+\subsection{Ensemble-Based Evaluation}
+
+Given a user $u$ with observed trajectory $\mathbf{x}^{(u)}$ and an ensemble of
+simulated trajectories $\{\mathbf{Y}^{(k)}\}_{k=1}^K$, we can quantify how 
+well the random-walk model explains the user's behavior.
+
+Let $d(\cdot,\cdot)$ be a similarity or distance measure between two trajectories.
+In this work we primarily use a weighted node-overlap metric that penalizes 
+long-distance mismatches.  
+The average similarity of the user to the ensemble is
+\[
+    \bar{s}^{(u)}
+    = \frac{1}{K} \sum_{k=1}^K s\bigl(\mathbf{x}^{(u)}, \mathbf{Y}^{(k)}\bigr),
+\]
+with an accompanying variance
+\[
+    \mathrm{Var}^{(u)}
+    = \frac{1}{K} \sum_{k=1}^K 
+      \Bigl(s\bigl(\mathbf{x}^{(u)}, \mathbf{Y}^{(k)}\bigr) - \bar{s}^{(u)}\Bigr)^2.
+\]
+These metrics estimate how ``typical'' the user is relative to repeated realizations
+of the random-walk model.
+
+Such quantities naturally extend to population-level statistics:
+distributions of similarities, identification of outliers, and hypothesis testing
+against the null model provided by random walks.
+
+\subsection{Consensus Models}
+
+To summarize the global behavior of the entire ensemble, we consider two forms
+of consensus:
+
+\paragraph{Markov Consensus.}
+All walker trajectories across all users define empirical transition counts
+\[
+    C_{vw} = \#\{ \text{times a walker moves } v \rightarrow w \}.
+\]
+Normalizing the rows yields an empirical transition matrix
+\[
+    P_{vw}
+    = \frac{C_{vw}}{\sum_{w'} C_{vw'}}.
+\]
+The matrix $P$ defines a global Markov model that captures the average 
+transition tendencies dictated by the graph structure and the distribution 
+of starting points.
+This model can be used to compute likelihoods of real user trajectories,
+to generate new synthetic walkers, or to build a deterministic ``most probable''
+consensus path by greedy selection.
+
+\paragraph{Medoid Trajectory.}
+As a complementary summary, we compute the \emph{medoid} of a set of walker 
+trajectories---the trajectory that minimizes the total distance to all others:
+\[
+    k^\ast
+    = \arg\min_{k} \sum_{j=1}^K
+      d\bigl(\mathbf{Y}^{(k)}, \mathbf{Y}^{(j)}\bigr).
+\]
+The medoid offers an interpretable representative path that arises from an
+actual random walker, as opposed to the probabilistic object represented by $P$.
+
+\subsection{Interpretation}
+
+The random-walk construction provides an explicit null model driven solely by 
+the graph's local connectivity.  
+If a real user's trajectory significantly deviates from the ensemble predicted by the graph,
+the deviation may reveal hidden structure, atypical behavior, or external influences
+that are not captured by topology alone.
+
+Conversely, if the random-walk ensemble closely matches the user, the graph alone
+is sufficient to explain the observed behavior.
+
+This duality---graph-driven randomness versus user-specific structure---is the
+central object of analysis in the subsequent sections of the report.

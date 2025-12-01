@@ -5,14 +5,12 @@ from project_cda.anime_graph_builder import AnimeGraphBuilder
 from time import perf_counter_ns
 import networkx as nx
 import numpy as np
+import gc
+from pathlib import Path
 from dataclasses import dataclass
 from collections import Counter
-import os
 import pickle
 import logging
-
-
-os.chdir("/home/yaroslav/FCUL/MARS_1.0")
 
 
 Node = int  # или str, в зависимости от id в графе
@@ -64,32 +62,62 @@ class RandomWalkerSettings:
 
 
 @dataclass
-class GraphYearManager:
-    year_set: Set[int]
-    folder: str = "data/graphs"
+class GraphLoader:
+    base_folder: Path
     subfolder: str = "Graphs_cleaned_95_percentile/"
     postfix: str = 'new'
 
-    def load_graphs(self) -> Dict[int, nx.Graph]:
-        log(f"Loading graphs", tag="GRAPHTEARMANAGER", level=logging.DEBUG)
-        graphs = {}
-        parent_path = os.path.join(self.folder, self.subfolder)
-        for name in os.listdir(parent_path):
-            if not name.endswith(".gpickle"):
-                continue
-            year, postfix = name.split("_")[-2:]
-            if postfix.split(".")[0] != self.postfix:
-                continue
-            if int(year) not in self.year_set:
-                continue
-            filepath = os.path.join(parent_path, name)
-            with open(filepath, "rb") as f:
-                graphs[year] = pickle.load(f)
+    def get_graph_path(self, year: int) -> Path | None:
+            """Ищет файл для конкретного года."""
+            search_dir = self.base_folder / self.subfolder
+            # Формируем имя файла, как ожидается: например 2015_new.gpickle
+            # Если формат имени сложнее, нужно вернуть логику с listdir, но только для поиска пути
+            for file_path in search_dir.glob("*.gpickle"):
+                parts = file_path.stem.split("_") # stem это имя файла без расширения
+                if len(parts) < 2: continue
+                
+                f_year_str, f_postfix = parts[-2], parts[-1]
+                
+                if f_postfix == self.postfix and f_year_str == str(year):
+                    return file_path
+            return None
 
-        if not graphs:
-            raise ValueError("No graphs loaded: check folder / postfix args")
-        log(f"Loaded {len(graphs)} graphs", tag="GRAPHTEARMANAGER", level=logging.DEBUG)
-        return graphs
+    def load_one_graph(self, year: int) -> nx.Graph | None:
+        path = self.get_graph_path(year)
+        if not path:
+            log(f"Graph for year {year} not found.", tag="LOADER", level=logging.WARNING)
+            return None
+            
+        log(f"Loading graph: {path.name}", tag="LOADER", level=logging.DEBUG)
+        try:
+            with open(path, "rb") as f:
+                graph = pickle.load(f)
+            return graph
+        except Exception as e:
+            log(f"Error loading {path}: {e}", tag="LOADER", level=logging.ERROR)
+            return None
+
+
+    # def load_graphs(self) -> Dict[int, nx.Graph]:
+    #     log(f"Loading graphs", tag="GRAPHTEARMANAGER", level=logging.DEBUG)
+    #     graphs = {}
+    #     parent_path = os.path.join(self.folder, self.subfolder)
+    #     for name in os.listdir(parent_path):
+    #         if not name.endswith(".gpickle"):
+    #             continue
+    #         year, postfix = name.split("_")[-2:]
+    #         if postfix.split(".")[0] != self.postfix:
+    #             continue
+    #         if int(year) not in self.year_set:
+    #             continue
+    #         filepath = os.path.join(parent_path, name)
+    #         with open(filepath, "rb") as f:
+    #             graphs[year] = pickle.load(f)
+
+    #     if not graphs:
+    #         raise ValueError("No graphs loaded: check folder / postfix args")
+    #     log(f"Loaded {len(graphs)} graphs", tag="GRAPHTEARMANAGER", level=logging.DEBUG)
+    #     return graphs
 
 
 class Walker:
@@ -278,6 +306,7 @@ class Measure:
 class RandomCrowd:
     def __init__(self,
                  users: List[Walker],
+                 data_folder: str | Path = Path("/home/yaroslav/FCUL/MARS_1.0/data/graphs"),
                  n_walkers_per_user: int = 10,
                  settings: RandomWalkerSettings = RandomWalkerSettings()):
         self.users = users
@@ -285,12 +314,11 @@ class RandomCrowd:
         self.settings = settings
         self.walkers = {}
         self.metrics = {}
+        self.loader = GraphLoader(base_folder=Path(data_folder))
         log(f"Random Crowd initialized", tag="CROWD", level=logging.INFO)
 
     def run(self):
-        years = sorted({y for u in self.users for y in u.year_set})
-
-        graphs = GraphYearManager(set(years)).load_graphs()
+        all_years = sorted({y for u in self.users for y in u.year_set})
 
         self.walkers = {
             u: [RandomWalker(parent_walker=u.username, current_node=u.start_node, settings=self.settings) for _ in range(self.n_walkers_per_user)]
@@ -298,9 +326,9 @@ class RandomCrowd:
                 }
         log(f"Created {self.n_walkers_per_user} walkers per user for {len(self.users)} users", tag="CROWD")
 
-        for year in years:
-            log(f"Year {year} started", tag="CROWD")
-            graph = graphs.get(year)
+        for year in all_years:
+            log(f"Processing year {year}...", tag="CROWD")
+            graph = self.loader.load_one_graph(year)
             if graph is None:
                 continue
 
@@ -311,6 +339,11 @@ class RandomCrowd:
 
                 for rw in self.walkers[u]:
                     rw.walk_through_year(year, graph, n_steps)
+
+            log(f"Year {year} finished.", tag="CROWD")
+            del graph
+            gc.collect()
+            log(f"Memory cleared for year {year}", tag="CROWD", level=logging.DEBUG)
 
         log(f"All walks are stopped.", tag="CROWD")        
 
