@@ -12,3 +12,4 @@ seaborn
 matplotlib
 pycountry
 pyarrow
+ijson
