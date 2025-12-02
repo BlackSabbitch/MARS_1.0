@@ -7,6 +7,7 @@ from collections import defaultdict
 from itertools import combinations
 import pickle
 import gc
+import os
 
 
 class AnimeGraphBuilder:
@@ -15,29 +16,22 @@ class AnimeGraphBuilder:
         self.users_csv_path = users_csv_path
         self.user_dict_json_path = user_dict_json_path
         self.anime_csv_path = anime_csv_path
-        self.anime_info = self._load_anime_info()
+        # self.anime_info = self._load_anime_info()
 
-    @staticmethod
-    def safe_year(timestamp) -> int:
-        try:
-            return datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S.%f").year
-        except:
-            return 9999999
+    # def _load_anime_info(self) -> dict:
+    #     df_anime = pd.read_csv(self.anime_csv_path)
 
-    def _load_anime_info(self) -> dict:
-        df_anime = pd.read_csv(self.anime_csv_path)
-
-        anime_info = {
-            int(row["anime_id"]): {
-                "title": row.get("title", ""),
-                "score": row.get("score", 0),
-                "source": row.get("source", ""),
-                "studio": row.get("studio", ""),
-                "episodes": row.get("episodes", 0)
-            }
-            for _, row in df_anime.iterrows()
-        }
-        return anime_info
+    #     anime_info = {
+    #         int(row["anime_id"]): {
+    #             "title": row.get("title", ""),
+    #             "score": row.get("score", 0),
+    #             "source": row.get("source", ""),
+    #             "studio": row.get("studio", ""),
+    #             "episodes": row.get("episodes", 0)
+    #         }
+    #         for _, row in df_anime.iterrows()
+    #     }
+    #     return anime_info
 
     def get_users_by_year(self, year):
         user_df = pd.read_csv(self.users_csv_path, usecols=["username", "join_date"])
@@ -48,81 +42,7 @@ class AnimeGraphBuilder:
         print(f"Users joined until {year}: {len(users)}")
         return users
 
-    def build_edges(self, year, max_users=100000):
-        users_allowed = self.get_users_by_year(year)
-        edges = defaultdict(int)
-        count = 0
-
-        with open(self.user_dict_json_path, "r", encoding="utf8") as f:
-            parser = ijson.kvitems(f, "")
-            
-            for username, anime_list in parser:
-
-                if username not in users_allowed:
-                    continue
-
-                count += 1
-
-                if count%100 == 0:
-                    print (f"Processed {count} users")
-
-                if count > max_users:
-                    break
-
-                #print(anime_list)
-
-                filtered = [
-                    entry[0]
-                    for entry in anime_list
-                    if entry[1] != 0 and self.safe_year(entry[2]) <= year and self.safe_year(entry[2])>2000     # != 1970
-                ]
-
-                for a1, a2 in combinations(sorted(set(filtered)), 2):
-                    edges[(a1, a2)] += 1
-
-        print(f"Edges built: {len(edges)}")
-        return edges
-
-    def build_jaccard_edges(self, year, max_users=100000):
-            users_allowed = self.get_users_by_year(year)
-            intersection_counts = defaultdict(int)
-            node_counts = defaultdict(int)
-            count = 0
-            with open(self.user_dict_json_path, "r", encoding="utf8") as f:
-                parser = ijson.kvitems(f, "")                
-                for username, anime_list in parser:
-                    if username not in users_allowed:
-                        continue
-                    count += 1
-                    if count % 1000 == 0:
-                        print(f"Processed {count} users...")
-                    if count > max_users:
-                        break
-                    filtered_anime_ids = [
-                        entry[0]
-                        for entry in anime_list
-                        if entry[1] != 0 and self.safe_year(entry[2]) <= year and self.safe_year(entry[2]) > 2000   # != 1970
-                    ]
-                    unique_anime_ids = sorted(set(filtered_anime_ids))
-                    for anime_id in unique_anime_ids:
-                        node_counts[anime_id] += 1
-                    for a1, a2 in combinations(unique_anime_ids, 2):
-                        intersection_counts[(a1, a2)] += 1
-            print(f"Raw intersections built: {len(intersection_counts)}")
-            print("Calculating Jaccard weights...")
-            final_edges = {}
-            for (u, v), intersection in intersection_counts.items():
-                size_u = node_counts[u]
-                size_v = node_counts[v]                
-                union = size_u + size_v - intersection
-                if union > 0:
-                    weight = intersection / union
-                    if weight > 0.001: 
-                        final_edges[(u, v)] = weight
-            print(f"Jaccard edges built: {len(final_edges)}")
-            return final_edges, node_counts
-
-    def build_graph(self, edges, weight_threshold=0, plot=False, output_path="anime_graph.gpickle") -> nx.Graph:
+    def build_graph(self, edges, node_counts=None, weight_threshold=0, plot=False, output_path="anime_graph.gpickle") -> nx.Graph:
 
         G = nx.Graph()
 
@@ -133,27 +53,115 @@ class AnimeGraphBuilder:
         print(f"Graph edges added: {G.number_of_edges()}")
 
         for node in G.nodes():
-            if node in self.anime_info:
-                nx.set_node_attributes(G, {node: self.anime_info[node]})
-            else:
-                nx.set_node_attributes(G, {node: {
-                    "title": "",
-                    "score": 0,
-                    "source": "",
-                    "studio": "",
-                    "episodes": 0
-                }})
+            nx.set_node_attributes(G, {node: {"title": str(node)}})   # Если нет информации, просто ставим ID в качестве названия
+
+        # 3. [НОВОЕ] Добавляем популярность (Total Voters)
+        if node_counts is not None:
+            # node_counts это dict {anime_id: count}
+            # Мы записываем это в атрибут 'popularity'
+            nx.set_node_attributes(G, node_counts, "popularity")
+            print("Node attributes 'popularity' set.")
 
         #degrees = dict(G.degree())
         #nx.set_node_attributes(G, degrees, "degree")
 
         if plot==True:
+            directory = os.path.dirname(output_path)
+            if directory and not os.path.exists(directory):
+                os.makedirs(directory, exist_ok=True)
             with open(output_path, "wb") as f:
                 pickle.dump(G, f)
             #nx.write_gexf(G, output_path)
             print(f"Graph saved to {output_path}")
 
         return G
+
+    def _collect_stats(self, year, max_users):
+        """
+        INTERNAL METHOD: Тяжелая работа по чтению и подсчету.
+        Ничего не знает о формулах весов. Просто считает сырые факты.
+        """
+        users_allowed = self.get_users_by_year(year)
+        
+        intersection_counts = defaultdict(int)
+        node_counts = defaultdict(int)
+        count = 0
+
+        with open(self.user_dict_json_path, "r", encoding="utf8") as f:
+            parser = ijson.kvitems(f, "")
+            
+            for username, anime_list in parser:
+                if username not in users_allowed:
+                    continue
+
+                count += 1
+                if count % 5000 == 0: # Чуть реже спамим в консоль
+                    print(f"Processed {count} users...")
+                if count > max_users:
+                    break
+
+                # Твоя оптимизированная фильтрация
+                filtered_anime_ids = [
+                    anime_id
+                    for anime_id, vote, timestamp in anime_list
+                    # Быстрая проверка года через срез строки
+                    if vote != 0 and 2000 < int(timestamp[:4]) <= year
+                ]
+                
+                # Убираем дубли (на всякий случай) и сортируем для combinations
+                unique_anime_ids = sorted(set(filtered_anime_ids))
+
+                # 1. Считаем популярность (нужно и для Jaccard, и для Raw как атрибут)
+                for anime_id in unique_anime_ids:
+                    node_counts[anime_id] += 1
+
+                # 2. Считаем пересечения (Raw weight)
+                for a1, a2 in combinations(unique_anime_ids, 2):
+                    intersection_counts[(a1, a2)] += 1
+                    
+        return intersection_counts, node_counts
+
+    def build_edges(self, year, max_users=100000, method="jaccard"):
+        """
+        Публичный метод. Выбирает стратегию расчета весов.
+        Arguments:
+            method: 'jaccard' | 'raw'
+        """
+        print(f"Building stats for {year}...")
+        
+        # 1. Запускаем тяжелый сборщик один раз
+        raw_intersections, node_counts = self._collect_stats(year, max_users)
+        
+        final_edges = {}
+        print(f"Calculating weights using method: {method.upper()}...")
+
+        # 2. Быстрый постпроцессинг в памяти
+        if method == "raw":
+            # Для Raw веса — это просто пересечения
+            # Мы просто фильтруем совсем слабые связи (опционально)
+            for pair, count in raw_intersections.items():
+                if count > 0: 
+                    final_edges[pair] = float(count)
+
+        elif method == "jaccard":
+            # Для Jaccard применяем формулу
+            for (u, v), intersection in raw_intersections.items():
+                size_u = node_counts[u]
+                size_v = node_counts[v]
+                
+                union = size_u + size_v - intersection
+                if union > 0:
+                    w = intersection / union
+                    if w > 0.001: # Отсечка шума
+                        final_edges[(u, v)] = w
+        
+        else:
+            raise ValueError(f"Unknown method: {method}")
+
+        print(f"Edges built: {len(final_edges)}")
+        
+        # Возвращаем и ребра, и популярность (она нужна всегда!)
+        return final_edges, node_counts
 
     def sparsify_backbone(self, gpickle_path, weight="weight", alpha=0.05, weight_threshold=1, save_path=None) -> nx.Graph:
         
