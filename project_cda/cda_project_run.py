@@ -1,7 +1,18 @@
 import sys
 import os
 import pandas as pd
+# Add project root directory to PYTHONPATH
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
 
+from project_cda.graph_spectral_clusterization import GraphSpectralClusterization
+from project_cda.graph_io import GraphIO
+from project_cda.graph_actions_ig import GraphActionsIG
+from project_cda.graph_actions_nx import GraphActionsNX
+from project_cda.user_analytics import UserAnalytics
+from project_cda.user_data import UserData
+from project_cda.user_distribution import UserDistribution
 
 
 # Add project root directory to PYTHONPATH
@@ -9,12 +20,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from project_cda.graph_io import GraphIO
-from project_cda.graph_actions_ig import GraphActionsIG
-from project_cda.graph_actions_nx import GraphActionsNX
-from project_cda.user_analytics import UserAnalytics
-from project_cda.user_data import UserData
-from project_cda.user_distribution import UserDistribution
+
 
 def project_cda_run():
     print("Start project_cda_run()")
@@ -79,8 +85,8 @@ def project_cda_run():
     # analytics.plot_genre_heatmap()
 
 
-    print("PATH:", r"C:\MariaSamosudova\Projects\UNIVER\ADB\Project\MARS_1.0\data\data_cda\graphs\anime_graph_2006.gexf")
-    print("EXISTS:", os.path.exists(r"C:\MariaSamosudova\Projects\UNIVER\ADB\Project\MARS_1.0\data\data_cda\graphs\anime_graph_2006.gexf"))
+    # print("PATH:", r"C:\MariaSamosudova\Projects\UNIVER\ADB\Project\MARS_1.0\data\data_cda\graphs\anime_graph_2006.gexf")
+    # print("EXISTS:", os.path.exists(r"C:\MariaSamosudova\Projects\UNIVER\ADB\Project\MARS_1.0\data\data_cda\graphs\anime_graph_2006.gexf"))
 
     # anime_graph_2006 = GraphActionsNX.get_graph(path = r"C:\MariaSamosudova\Projects\UNIVER\ADB\Project\MARS_1.0\data\data_cda\graphs\anime_graph_2006.gexf")
     # anime_graph_2010_47k = GraphActionsNX.get_graph(path = r"C:\MariaSamosudova\Projects\UNIVER\ADB\Project\MARS_1.0\data\data_cda\graphs\anime_graph_2010_47k.gexf")
@@ -122,8 +128,71 @@ def project_cda_run():
     # run_community_detection_for_all(graphs_dir)
 
     # 2. Count communities detected by Leiden and Infomap
-    GraphActionsIG.count_communities_in_folder(graphs_dir_communities)
+    #GraphActionsIG.count_communities_in_folder(graphs_dir_communities)
+
+    anime_graph_2018_backbone = (
+        r"C:\MariaSamosudova\Projects\UNIVER\ADB\Project\MARS_1.0"
+        r"\data\data_cda\graphs\Graphs_cleaned_95_percentile_backbone_thr_2"
+        r"\anime_graph_2018_backbone.gpickle"
+    )
+
+    anime_graph_2018_backbone_jaccard = (
+        r"C:\MariaSamosudova\Projects\UNIVER\ADB\Project\MARS_1.0"
+        r"\data\data_cda\graphs"
+        r"\anime_graph_2018_jaccard.gpickle"
+    )
+
+    # G_nx = GraphActionsIG.load_graph(anime_graph_2018_backbone)
+    # g, mapping = GraphActionsIG.convert_nx_to_igraph(G_nx)
+   
+
+    # result = GraphActionsIG.detect_community_leiden(
+    #         graph = g,
+    #         path = None,
+    #         save = False,
+    #         save_format = "pkl",
+    #         log_weights =  False,
+    #         resolution = 1,
+    #         beta = 0.5,
+    #         objective_function = "modularity",
+    #         n_iterations = 10,
+    #         weights = "weight",
+    #         verbose = True
+    # )
+    # GraphActionsIG.save_communities_csv(
+    #     result=result,
+    #     threshold=10,
+    #     out_dir=r"C:\MariaSamosudova\Projects\UNIVER\ADB\Project\MARS_1.0\data\data_cda\communities_2018",
+    #     method_name="leiden"
+    # )
+
+
+    # GraphActionsIG.detect_community_walktrap(
+    #         graph = g,
+    #         path = None,
+    #         steps = 10,
+    #         weights_attr = "weight",
+    #         save = False,
+    #         save_format = "pkl",
+    #         verbose = True
+    # )
+
+    # GraphActionsIG.detect_community_infomap(
+    #         path = anime_graph_2018_backbone,
+    #         save = False,
+    #         save_format = "pkl",
+    #         log_weights = False,        
+    #         edge_weights = "weight",
+    #         trials = 5,                
+    #         verbose = True
+    # )
+
+    GraphSpectralClusterization.run_clusterization(anime_graph_2018_backbone_jaccard, 0.5, 5)
+
+
 
 if __name__ == "__main__":
             
     project_cda_run()
+    
+    

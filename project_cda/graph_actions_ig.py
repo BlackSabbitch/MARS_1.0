@@ -199,44 +199,282 @@ class GraphActionsIG:
         print("=====================================\n")
 
     @staticmethod
-    def detect_community_leiden(path: str, save_format="pkl"):
-        G_nx = GraphActionsIG.load_graph(path)
-        g, mapping = GraphActionsIG.convert_nx_to_igraph(G_nx)
+    def detect_community_leiden(
+            graph=None,
+            path=None,
+            save=False,
+            save_format="pkl",
+            log_weights=False,
+            resolution=0.7,
+            beta=0.01,
+            objective_function="CPM",
+            n_iterations=10,
+            weights="weight",
+            verbose=True
+    ):
+        if graph is not None:
+            g = graph
+            path_label = "<igraph-object>"
+        elif path is not None:
+            G_nx = GraphActionsIG.load_graph(path)
+            g, mapping = GraphActionsIG.convert_nx_to_igraph(G_nx)
+            path_label = path
+        else:
+            raise ValueError("Either `graph` or `path` must be provided.")
 
-        cl = g.community_leiden(weights="weight")
+        # Prepare weights
+        w = g.es[weights] if weights in g.es.attribute_names() else None
+        if log_weights and w is not None:
+            w = [np.log1p(x) for x in w]
+
+        # Leiden
+        cl = g.community_leiden(
+            weights=w,
+            resolution=resolution,
+            beta=beta,
+            objective_function=objective_function,
+            n_iterations=n_iterations
+        )
+
         g.vs["community"] = cl.membership
 
+        if verbose:
+            print("\n=== Leiden Community Detection Results ===")
+            print(f"Graph: {path_label}")
+            print(f"Communities: {len(set(cl.membership))}")
+            print(f"Sizes: {cl.sizes()}")
+            try:
+                print(f"Modularity: {cl.modularity}")
+            except:
+                print("Modularity: N/A")
+            print("==========================================\n")
+
+        if not save:
+            return {
+                "clustering": cl,
+                "membership": cl.membership,
+                "sizes": cl.sizes(),
+                "graph": g
+            }
+
+        if path is None:
+            raise ValueError("Cannot save without path.")
+
         base = os.path.splitext(path)[0]
+        out_path = f"{base}_leiden.{save_format}"
 
         if save_format.lower() == "pkl":
-            out_path = base + "_leiden.pkl"
             GraphIO.save_igraph_to_pickle(g, out_path)
         else:
-            out_path = base + "_leiden.gexf"
             GraphIO.save_igraph_to_gexf(g, out_path)
 
-        print(f"Leiden communities saved to: {out_path}")
+        return cl, out_path
+
+
+    @staticmethod
+    def detect_community_walktrap(
+            graph=None,
+            path: str = None,
+            steps: int = 4,
+            weights_attr: str = "weight",
+            save: bool = True,
+            save_format: str = "pkl",
+            verbose: bool = True
+        ):
+        """
+        Walktrap community detection.
+
+        Parameters
+        ----------
+        graph : ig.Graph or None
+            If provided, algorithm will use this graph directly.
+        path : str or None
+            If provided, graph will be loaded from file (.gexf / .pkl / .gpickle).
+        steps : int
+            Walktrap steps (default 4).
+        weights_attr : str
+            Edge weight attribute (default 'weight').
+        save : bool
+            Save result graph with "community" labels.
+        save_format : str
+            'pkl' or 'gexf'.
+        verbose : bool
+            Print detailed logs.
+
+        Returns
+        -------
+        cl : igraph.clustering.VertexClustering
+        out_path : str or None
+        """
+
+        # ---------------------------
+        # Load or use existing graph
+        # ---------------------------
+
+        if graph is not None:
+            # Already an igraph object
+            if verbose:
+                print("\n=== WALKTRAP community detection ===")
+                print("Using igraph object provided directly.")
+
+            g = graph
+            path_label = "<igraph-object>"
+
+        elif path is not None:
+            if verbose:
+                print("\n=== WALKTRAP community detection ===")
+                print(f"Loading graph from: {path}")
+
+            # Load as NetworkX
+            G_nx = GraphActionsIG.load_graph(path)
+
+            # Convert to igraph
+            g, mapping = GraphActionsIG.convert_nx_to_igraph(G_nx)
+
+            path_label = path
+
+        else:
+            raise ValueError("Either `graph` or `path` must be provided.")
+
+        # ---------------------------
+        # Run Walktrap
+        # ---------------------------
+        if verbose:
+            print(f"Graph loaded: {g.vcount()} nodes, {g.ecount()} edges")
+            print(f"Walktrap steps = {steps}")
+
+        weights = g.es[weights_attr] if weights_attr in g.es.attribute_names() else None
+
+        wt = g.community_walktrap(steps=steps, weights=weights)
+        cl = wt.as_clustering()
+
+        # Assign membership
+        g.vs["community"] = cl.membership
+
+        # ---------------------------
+        # Print full results
+        # ---------------------------
+        if verbose:
+            sizes = cl.sizes()
+            num_comm = len(sizes)
+
+            print("\n--- FULL WALKTRAP REPORT ---")
+            print(f"Input graph: {path_label}")
+            print(f"Detected communities: {num_comm}")
+            print(f"Average community size: {np.mean(sizes):.2f}")
+            print(f"Max community size: {np.max(sizes)}")
+            print(f"Min community size: {np.min(sizes)}")
+
+            if hasattr(cl, "modularity"):
+                print(f"Modularity: {cl.modularity:.4f}")
+            else:
+                print("Modularity: N/A")
+
+            print("\nCommunity sizes (all communities):")
+            for idx, size in enumerate(sizes):
+                print(f"  Community {idx}: size {size}")
+
+            print("----------------------------------")
+
+        # ---------------------------
+        # Saving result
+        # ---------------------------
+        out_path = None
+        if save and path is not None:  # Only possible if we know where to save
+            base = os.path.splitext(path)[0]
+
+            if save_format.lower() == "pkl":
+                out_path = base + "_walktrap.pkl"
+                GraphIO.save_igraph_to_pickle(g, out_path)
+            else:
+                out_path = base + "_walktrap.gexf"
+                GraphIO.save_igraph_to_gexf(g, out_path)
+
+            if verbose:
+                print(f"Saved Walktrap result to: {out_path}")
+
+        elif verbose and not save:
+            print("save=False → Not saving results.")
+
+        elif verbose and path is None:
+            print("Warning: path=None → cannot save graph to disk.")
+
         return cl, out_path
 
     @staticmethod
-    def detect_community_infomap(path: str, save_format="pkl"):
+    def detect_community_infomap(
+            path: str,
+            save: bool = True,
+            save_format: str = "pkl",
+            log_weights: bool = False,
+            edge_weights: str = "weight",
+            trials: int = 30,
+            verbose: bool = True
+    ):
+        """
+        Perform Infomap community detection on weighted graph (.gexf or .pkl).
+        Supports:
+            • log-weight scaling
+            • optional saving
+            • console reporting
+        """
+
+        # 1. Load graph
         G_nx = GraphActionsIG.load_graph(path)
+
+        # 2. Convert to igraph
         g, mapping = GraphActionsIG.convert_nx_to_igraph(G_nx)
 
-        cl = g.community_infomap(edge_weights="weight")
+        # 3. Optionally scale weights in log-scale
+        if log_weights:
+            w = np.array(g.es[edge_weights], dtype=float)
+            w = np.log1p(w)
+            g.es[edge_weights] = w
+            if verbose:
+                print("Applied log-scale to weights.")
+
+        # 4. Run Infomap (python-igraph supports only: edge_weights, trials)
+        if verbose:
+            print("\nRunning Infomap...")
+            print(f"Trials: {trials}, Log-scale: {log_weights}")
+
+        cl = g.community_infomap(
+            edge_weights=edge_weights,
+            trials=trials
+        )
+
+        # 5. Attach community membership to vertices
         g.vs["community"] = cl.membership
 
-        base = os.path.splitext(path)[0]
+        # 6. Console output
+        if verbose:
+            print("\n=== Infomap Community Detection Results ===")
+            print(f"Graph: {os.path.basename(path)}")
+            print(f"Number of communities: {len(cl)}")
+            print(f"Community sizes: {cl.sizes()[:50]} ...")
+            try:
+                print(f"Modularity: {cl.modularity}")
+            except:
+                print("Modularity: N/A")
+            print("==========================================")
 
-        if save_format.lower() == "pkl":
-            out_path = base + "_infomap.pkl"
-            GraphIO.save_igraph_to_pickle(g, out_path)
-        else:
-            out_path = base + "_infomap.gexf"
-            GraphIO.save_igraph_to_gexf(g, out_path)
+        # 7. Optional saving
+        if save:
+            base = os.path.splitext(path)[0]
+            if save_format.lower() == "pkl":
+                out_path = base + "_infomap.pkl"
+                GraphIO.save_igraph_to_pickle(g, out_path)
+            else:
+                out_path = base + "_infomap.gexf"
+                GraphIO.save_igraph_to_gexf(g, out_path)
 
-        print(f"Infomap communities saved to: {out_path}")
-        return cl, out_path
+            if verbose:
+                print(f"Infomap communities saved to: {out_path}")
+
+            return cl, out_path
+
+        # If not saving — return results only
+        return cl, None
     
     @staticmethod
     def run_community_detection_for_all(graphs_dir):
@@ -360,5 +598,81 @@ class GraphActionsIG:
             print(f"\nSaved to: {out_path}")
 
         return df
+    
+    @staticmethod
+    def save_communities_csv(result, threshold, out_dir, method_name="leiden"):
+        """
+        Saves:
+        • separate CSV files for each community ≥ threshold
+        • one combined CSV file for all selected communities
+        """
+
+        cl = result["clustering"]
+        g = result["graph"]
+        sizes = result["sizes"]
+        membership = result["membership"]
+
+        year_tag = "2018"
+
+        if not os.path.exists(out_dir):
+            os.makedirs(out_dir)
+
+        selected_ids = []
+
+        # -----------------------------------
+        # 1. Save each community separately
+        # -----------------------------------
+        for comm_id, size in enumerate(sizes):
+            if size < threshold:
+                continue
+
+            selected_ids.append(comm_id)
+
+            vertices = [i for i, c in enumerate(membership) if c == comm_id]
+            sub = g.subgraph(vertices)
+
+            # Convert to DataFrame
+            rows = []
+            for v in sub.vs:
+                row = dict(v.attributes())
+                row["community"] = comm_id
+                rows.append(row)
+
+            df = pd.DataFrame(rows)
+
+            filename = os.path.join(
+                out_dir,
+                f"community_{year_tag}_{method_name}_{comm_id}_size_{size}.csv"
+            )
+
+            df.to_csv(filename, index=False, encoding="utf-8")
+
+            print(f"Saved CSV: {filename} (rows={len(df)})")
+
+        # -----------------------------------
+        # 2. Save combined CSV
+        # -----------------------------------
+        if selected_ids:
+
+            rows = []
+            for idx, c in enumerate(membership):
+                if c in selected_ids:
+                    row = dict(g.vs[idx].attributes())
+                    row["community"] = c
+                    rows.append(row)
+
+            df_all = pd.DataFrame(rows)
+
+            filename_all = os.path.join(
+                out_dir,
+                f"communities_combined_{year_tag}_{method_name}_threshold_{threshold}.csv"
+            )
+
+            df_all.to_csv(filename_all, index=False, encoding="utf-8")
+            print(f"Saved combined CSV: {filename_all} (rows={len(df_all)})")
+
+        return selected_ids
+
+    
 
 
