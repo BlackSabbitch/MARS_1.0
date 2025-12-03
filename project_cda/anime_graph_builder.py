@@ -8,6 +8,7 @@ from itertools import combinations
 import pickle
 import gc
 import os
+import igraph as ig
 
 
 class AnimeGraphBuilder:
@@ -163,10 +164,7 @@ class AnimeGraphBuilder:
         # Возвращаем и ребра, и популярность (она нужна всегда!)
         return final_edges, node_counts
 
-    def sparsify_backbone(self, gpickle_path, weight="weight", alpha=0.05, weight_threshold=1, save_path=None) -> nx.Graph:
-        
-        with open(gpickle_path, "rb") as f:
-            G = pickle.load(f)
+    def sparsify_backbone(self, G: ig.Graph, weight="weight", alpha=0.05, weight_threshold=1, save_path=None) -> nx.Graph:
         print(f"Graph loaded: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
 
        
@@ -201,12 +199,13 @@ class AnimeGraphBuilder:
 
         return B
 
-    def sparsify_knn(self, g: nx.Graph, k: int = 20) -> nx.Graph:
+    def sparsify_knn(self, G: ig.Graph, k: int = 20) -> nx.Graph:
         """
         Оставляет Top-K связей по весу для каждого узла.
         Результат — неориентированный граф.
         Ребро (u, v) существует, если v входит в топ-k у u, ИЛИ u входит в топ-k у v.
         """
+        print(f"Graph loaded: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
         # Создаем новый пустой граф. Копировать весь g дорого.
         sparse_g = nx.Graph()
         
