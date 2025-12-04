@@ -57,10 +57,15 @@ class PartitionEnricher:
         if self.key_col not in df_part.columns:
             raise ValueError(f"Partition file is missing key column: {self.key_col}")
 
-        enriched_df = df_part.merge(
-            self.meta_df, 
-            on='anime_id', 
-            how='left'
-        )
-            
-        return enriched_df
+        return df_part.merge(self.meta_df, on=self.key_col, how='left')
+
+    def get_metadata_dict(self) -> dict:
+        """
+        [НОВОЕ] Возвращает словарь {id: {attr: val}} для ClusterEvaluation.
+        """
+        # Превращаем DataFrame в словарь, ориентированный по индексу (key_col)
+        # orient='index' сделает {id: {'genres': {...}, 'source': '...'}}
+        if self.key_col not in self.meta_df.columns:
+             return {}
+        
+        return self.meta_df.set_index(self.key_col).to_dict(orient='index')

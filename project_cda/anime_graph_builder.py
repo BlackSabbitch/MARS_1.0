@@ -43,15 +43,14 @@ class AnimeGraphBuilder:
         print(f"Users joined until {year}: {len(users)}")
         return users
 
-    def build_graph(self, edges, node_counts=None, weight_threshold=0, plot=False, output_path="anime_graph.gpickle") -> nx.Graph:
+    def build_graph(self, edges, node_counts=None, output_path=None) -> nx.Graph:
 
         G = nx.Graph()
 
         for (a1, a2), w in edges.items():
-            if w > weight_threshold:
-                G.add_edge(a1, a2, weight=w)
+            G.add_edge(a1, a2, weight=w)
 
-        print(f"Graph edges added: {G.number_of_edges()}")
+        print(f"Graph constructed: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
 
         for node in G.nodes():
             nx.set_node_attributes(G, {node: {"title": str(node)}})   # Если нет информации, просто ставим ID в качестве названия
@@ -61,19 +60,9 @@ class AnimeGraphBuilder:
             # node_counts это dict {anime_id: count}
             # Мы записываем это в атрибут 'popularity'
             nx.set_node_attributes(G, node_counts, "popularity")
-            print("Node attributes 'popularity' set.")
 
-        #degrees = dict(G.degree())
-        #nx.set_node_attributes(G, degrees, "degree")
-
-        if plot==True:
-            directory = os.path.dirname(output_path)
-            if directory and not os.path.exists(directory):
-                os.makedirs(directory, exist_ok=True)
-            with open(output_path, "wb") as f:
-                pickle.dump(G, f)
-            #nx.write_gexf(G, output_path)
-            print(f"Graph saved to {output_path}")
+        if output_path:
+            self._save_graph(G, output_path)
 
         return G
 
@@ -122,11 +111,12 @@ class AnimeGraphBuilder:
                     
         return intersection_counts, node_counts
 
-    def build_edges(self, year, max_users=100000, method="jaccard"):
+    def build_edges(self, year: int, max_users: int = 100000, method: str = "jaccard", threshold: float = 0):   # -> dict, dict
         """
         Публичный метод. Выбирает стратегию расчета весов.
         Arguments:
             method: 'jaccard' | 'raw'
+            threshold: минимальный вес ребра (для Jaccard - от 0 до 1, для Raw - кол-во пересечений)
         """
         print(f"Building stats for {year}...")
         
@@ -134,18 +124,23 @@ class AnimeGraphBuilder:
         raw_intersections, node_counts = self._collect_stats(year, max_users)
         
         final_edges = {}
-        print(f"Calculating weights using method: {method.upper()}...")
+        print(f"Calculating weights: {method.upper()} (Threshold: {threshold})...")
 
         # 2. Быстрый постпроцессинг в памяти
         if method == "raw":
-            # Для Raw веса — это просто пересечения
-            # Мы просто фильтруем совсем слабые связи (опционально)
+            # Для Raw threshold — это минимальное кол-во общих групп (например, 2 или 5)
+            # Если threshold=0, берем всё.
+            cutoff = int(threshold) if threshold > 1 else 0
+
             for pair, count in raw_intersections.items():
-                if count > 0: 
+                if count > cutoff: 
                     final_edges[pair] = float(count)
 
         elif method == "jaccard":
-            # Для Jaccard применяем формулу
+            # Для Jaccard threshold — это доля (например, 0.05)
+            # Дефолтная защита от шума (хотя бы 0.001), если threshold передан как 0
+            min_w = threshold if threshold > 0 else 0.001
+
             for (u, v), intersection in raw_intersections.items():
                 size_u = node_counts[u]
                 size_v = node_counts[v]
@@ -153,7 +148,7 @@ class AnimeGraphBuilder:
                 union = size_u + size_v - intersection
                 if union > 0:
                     w = intersection / union
-                    if w > 0.001: # Отсечка шума
+                    if w > min_w: # Отсечка шума
                         final_edges[(u, v)] = w
         
         else:
@@ -164,63 +159,65 @@ class AnimeGraphBuilder:
         # Возвращаем и ребра, и популярность (она нужна всегда!)
         return final_edges, node_counts
 
-    def sparsify_backbone(self, G: ig.Graph, weight="weight", alpha=0.05, weight_threshold=1, save_path=None) -> nx.Graph:
+    def sparsify_backbone(self, G: ig.Graph, weight="weight", alpha=0.05, output_path=None) -> nx.Graph:
         print(f"Graph loaded: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
 
-       
+        print(f"Running Backbone (alpha={alpha})...")
         B = nx.Graph()
         B.add_nodes_from(G.nodes(data=True))
         
         for u in G.nodes():
-            neighbors = [(v, d) for v, d in G[u].items() if d.get(weight, 1.0) > weight_threshold]
+            neighbors = list(G[u].items())
             k = len(neighbors)
             if k < 2:
                 continue
                 
             w_total = sum(d.get(weight, 1.0) for _, d in neighbors)
+            if w_total == 0:
+                continue
             
             for v, d in neighbors:
                 w = d.get(weight, 1.0)
                 p = w / w_total
                 
-                
-                alpha_uv = 1 - (k - 1) * (1 - p)**(k - 1)
+                try:
+                    alpha_uv = 1 - (k - 1) * (1 - p)**(k - 1)
+                except ZeroDivisionError:
+                    alpha_uv = 1.0
                 
                 if alpha_uv < alpha:
                     B.add_edge(u, v, **d)
         
-        print(f"Backbone edges: {B.number_of_edges()}")
+        print(f"Backbone result: {B.number_of_edges()} edges")
 
       
-        if save_path is not None:
-            with open(save_path, "wb") as f:
-                pickle.dump(B, f)
-            print(f"Backbone saved to {save_path}")
+        if output_path:
+            self._save_graph(B, output_path)
 
         return B
 
-    def sparsify_knn(self, G: ig.Graph, k: int = 20) -> nx.Graph:
+    def sparsify_knn(self, G: ig.Graph, k: int = 20, output_path=None) -> nx.Graph:
         """
         Оставляет Top-K связей по весу для каждого узла.
         Результат — неориентированный граф.
         Ребро (u, v) существует, если v входит в топ-k у u, ИЛИ u входит в топ-k у v.
         """
-        print(f"Graph loaded: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+        print(f"Running KNN (k={k})...")
         # Создаем новый пустой граф. Копировать весь g дорого.
         sparse_g = nx.Graph()
         
         # Копируем узлы (чтобы не потерять изолированные, если такие нужны, или атрибуты)
-        sparse_g.add_nodes_from(g.nodes(data=True))
+        sparse_g.add_nodes_from(G.nodes(data=True))
         
-        for node in g.nodes():
-            if len(g[node]) == 0:
+        for node in G.nodes():
+            if len(G[node]) == 0:
                 continue
                 
             # Получаем список соседей: [(neighbor, weight), ...]
             # Предполагаем, что вес лежит в атрибуте 'weight'
             neighbors = [
                 (neighbor, data['weight']) 
-                for neighbor, data in g[node].items()
+                for neighbor, data in G[node].items()
             ]
             
             # Сортируем по весу (убывание) и берем топ-K
@@ -233,7 +230,17 @@ class AnimeGraphBuilder:
             for neighbor, weight in top_k_neighbors:
                 sparse_g.add_edge(node, neighbor, weight=weight)
                 
-        print(f"Original edges: {g.number_of_edges()}")
-        print(f"Sparse edges: {sparse_g.number_of_edges()}")
+        print(f"KNN result: {sparse_g.number_of_edges()} edges")
+
+        if output_path:
+            self._save_graph(sparse_g, output_path)
         
         return sparse_g
+
+    def _save_graph(self, G, path):
+        directory = os.path.dirname(path)
+        if directory and not os.path.exists(directory):
+            os.makedirs(directory, exist_ok=True)
+        with open(path, "wb") as f:
+            pickle.dump(G, f)
+        print(f"Graph saved to: {path}")

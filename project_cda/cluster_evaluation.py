@@ -17,6 +17,7 @@ class ClusterEvaluation:
         self.method_name = method_name
         self.history = aligned_history
         self.years = sorted(aligned_history.keys())
+        self.evaluation = []
         
         # --- АВТОМАТИЧЕСКАЯ ОЧИСТКА INFO ---
         self.anime_info = self._sanitize_anime_info(anime_info) if anime_info else None
@@ -153,16 +154,16 @@ class ClusterEvaluation:
     def evaluate(self) -> dict:
         """Сводный отчет."""
         print(f"Evaluating method: {self.method_name}...")
-        return {
+        self.evaluation.append({
             "Method": self.method_name,
             "Avg_Gini": round(self.metric_spatial_gini(), 4),
             "Avg_Entropy": round(self.metric_entropy_mdl_proxy(), 4),
             "Stability_AMI": round(self.metric_temporal_stability_ami(), 4),
-            "Count_Volatility": round(self.metric_cluster_count_volatility(), 2),
+            # "Count_Volatility": round(self.metric_cluster_count_volatility(), 2), # broken metric (((
             # Считаем оба вида чистоты!
             "Purity_Source": round(self.metric_semantic_purity(attribute='source'), 4),
             "Purity_Genre": round(self.metric_semantic_purity(attribute='genres'), 4),
-        }
+        })
 
 """
 # 1. Загружаем CSV пандой
