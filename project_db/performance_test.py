@@ -1,134 +1,137 @@
 import time
 import pandas as pd
+import warnings
 from anime_recommendation import AnimeRecommendation
-from mongoDB_tools import MongoTools
-from concurrency_rating_test import ConcurrencyRatingTest
-from database_connection_manager import DatabaseConnectionManager
-from schema_manager import SchemaManager
-from mysql_index_manager import MySQLIndexManager
-from mongo_index_manager import MongoIndexManager
 
+# Suppress Pandas warnings
+warnings.filterwarnings('ignore', category=UserWarning)
 
 class PerformanceTest:
-    """
-    Full benchmark:
-        - Drop MySQL + Mongo indexes
-        - Run all heavy recommendation queries (5 total)
-        - Recreate indexes
-        - Run all queries again
-        - Produce summary table with performance comparison
-    """
-
-    def __init__(self, db, mysql_index_manager: MySQLIndexManager, mongo_index_manager: MongoIndexManager):
+    
+    def __init__(self, db, mysql_index_manager, mongo_index_manager, mongo_tools):
         self.db = db
         self.mysql_idx = mysql_index_manager
         self.mongo_idx = mongo_index_manager
+        self.mongo_tools = mongo_tools  
+        self.rec = AnimeRecommendation()
 
-    # ---------------------------------------------------
-    # Utility: measure time of a function call
-    # ---------------------------------------------------
-    def time_query(self, func, label):
+    def _measure(self, func, args=(), warmup=True):
+        """
+        Runs the function and measures execution time. 
+        Creates connection OUTSIDE the timer to measure query time, not handshake time.
+        """
+        conn = self.db.new_mysql_connection()
         try:
+            # 1. Warmup (optional, execute once without measuring to fill Buffer Pool)
+            if warmup:
+                try:
+                    func(conn, *args)
+                except:
+                    pass # Ignore warmup errors
+
+            # 2. Measurement
             start = time.perf_counter()
-            result = func()
+            result = func(conn, *args)
             end = time.perf_counter()
-            duration = end - start
-            print(f"[{label}] finished in {duration:.3f} sec")
-            return duration, result
+            
+            # If result is None, it means an internal error occurred
+            if result is None:
+                print("[!] Warning: Function returned None")
+                return 25.0 # Penalty for failure
+
+            return end - start
 
         except Exception as e:
-            print(f"[{label}] FAILED due to {e}")
-            return float("inf"), None
+            print(f"Error during test execution: {e}")
+            return float('nan')
+        finally:
+            if conn:
+                conn.close()
 
+    def run_targeted_benchmark(self):
+        print("Performance benchmark (5 Optimized Scenarios)\n")
+        
+        scenarios = [
+            # 1. FEDERATED: Mongo Text -> MySQL Join
+            {
+                "name": "1. [Federated] Top 'bounty hunter space' in united_states",
+                "index": "idx_users_country_age", 
+                "func": self.rec.recommend_top_by_synopsis_and_country,
+                "args": (self.mongo_tools, "bounty hunter space", "united_states") 
+            },
+            # 2. PURE SQL: Heavy Selection (Reverse Lookup)
+            {
+                "name": "2. [SQL Pure] 10k Reviews (ID 1 - Cowboy Bebop)",
+                "index": "idx_mal_rating",
+                "func": self.rec.get_raw_anime_reviews,
+                "args": (self.mongo_tools, 1) 
+            },
+            # 3. PURE SQL: Global Sorting
+            {
+                "name": "3. [SQL Pure] Global Top 30",
+                "index": "idx_score_members",
+                "func": self.rec.recommend_global_top30,
+                "args": (self.mongo_tools,)
+            },
+            # 4. FEDERATED: Mongo Text -> MySQL Geo
+            {
+                "name": "4. [Federated] Neighbors for User 603 ('bounty hunter space')",
+                "index": "idx_users_lat_lon",
+                "func": self.rec.recommend_geo_contextual, 
+                "args": (self.mongo_tools, 603, "bounty hunter space") 
+            },
+            # 5. FEDERATED: Personalized Hybrid (Demographics)
+            {
+                "name": "5. [Federated] Personalized for User 603 (Context: 'robot')",
+                "index": "idx_users_country_gender",
+                "func": self.rec.recommend_personal_demographic_hybrid,
+                "args": (self.mongo_tools, 603, "robot") 
+            }
+        ]
 
-    # ---------------------------------------------------
-    # Run all recommendation queries
-    # ---------------------------------------------------
-    def run_sql_tests(self):
+        results = []
 
-        rec = AnimeRecommendation()
-        times = {}
+        for case in scenarios:
+            test_name = case["name"]
+            idx_name = case["index"]
+            print(f"--- Scenario: {test_name} ---")
 
-        # 1) Portugal top30
-        times["PORTUGAL_TOP30"] = self.time_query(
-            lambda: rec.recommend_portugal_top30(self.db.get_mysql_connection(), self.db),
-            "PORTUGAL_TOP30"
-        )
+            # 1. Ensure Index Exists (Baseline - Fast)
+            self.mysql_idx.create_specific_index(idx_name)
+            print(f"-- Running WITH index {idx_name}...")
+            t_fast = self._measure(case["func"], case["args"], warmup=True)
+            print(f"-- Time: {t_fast:.4f}s")
 
-        # 2) Top-100 from SQL only
-        times["TOP100_SQL"] = self.time_query(
-            lambda: rec.hundred_best(self.db.get_mysql_connection()),
-            "TOP100_SQL"
-        )
+            # 2. Drop Index (Test - Slow)
+            self.mysql_idx.drop_specific_index(idx_name)
+            print("-- Running WITHOUT index...")
+            t_slow = self._measure(case["func"], case["args"], warmup=False) # No warmup for cold test
+            
+            display_slow = f"> {t_slow:.4f}s (Timeout)" if t_slow >= 20.0 else f"{t_slow:.4f}s"
+            print(f"-- Time: {display_slow}")
 
-        # 3) Top-100 by user preferences
-        times["TOP10_BY_USER_PREFERENCE"] = self.time_query(
-            lambda: rec.recommend_by_genres(self.db.get_mysql_connection(), user_id = 21, limit = 10),
-            "TOP10_BY_USER_PREFERENCE"
-        )
+            # 3. Restore Index immediately
+            self.mysql_idx.create_specific_index(idx_name)
 
-        # 4) Top-100 with Mongo synopsis
-        times["TOP100_SQL_MONGO"] = self.time_query(
-            lambda: rec.hundred_best_with_synopsis(self.db.get_mysql_connection(), self.db),
-            "TOP100_SQL_MONGO"
-        )
+            # Calculate Speedup
+            speedup = t_slow / t_fast if t_fast > 0 else 0
+            speedup_str = f"{speedup:.1f}x" if t_slow < 20.0 else "Huge (> timeout)"
 
-        # 5) PT Adventure + Magic
-        times["PT_ADV_MAGIC"] = self.time_query(
-            lambda: rec.recommend_pt_adventure_magic(self.db.get_mysql_connection(), self.db),
-            "PT_ADV_MAGIC"
-        )
-
-        return times
-
-    # ---------------------------------------------------
-    # RUN THE FULL BENCHMARK PIPELINE
-    # ---------------------------------------------------
-    def run(self):
-        print("\n=====================================")
-        print("      PERFORMANCE BENCHMARK START")
-        print("=====================================\n")
-
-        # ---------------------------------------------------
-        # A) DROP ALL INDEXES
-        # ---------------------------------------------------
-        print("\n=== DROPPING ALL INDEXES (MySQL + Mongo) ===")
-        self.mysql_idx.drop_all_indexes()
-        self.mongo_idx.drop_all_indexes()
-
-        # ---------------------------------------------------
-        # B) RUN TEST QUERIES WITHOUT INDEXES
-        # ---------------------------------------------------
-        print("\n=== RUNNING TESTS WITHOUT INDEXES ===")
-        no_idx_times = self.run_sql_tests()
-
-        # ---------------------------------------------------
-        # C) CREATE INDEXES
-        # ---------------------------------------------------
-        print("\n=== CREATING INDEXES (MySQL + Mongo) ===")
-        self.mysql_idx.ensure_all_indexes()
-        self.mongo_idx.ensure_all_indexes()
-
-        # ---------------------------------------------------
-        # D) RUN TESTS WITH INDEXES
-        # ---------------------------------------------------
-        print("\n=== RUNNING TESTS WITH INDEXES ===")
-        with_idx_times = self.run_sql_tests()
-
-        # ---------------------------------------------------
-        # E) BUILD SUMMARY TABLE
-        # ---------------------------------------------------
-        df = pd.DataFrame({
-                "NO_INDEXES": {k: v[0] for k, v in no_idx_times.items()},
-                "WITH_INDEXES": {k: v[0] for k, v in with_idx_times.items()},
+            results.append({
+                "Test Case": test_name,
+                "Index Toggled": idx_name,
+                "Time (No Index)": display_slow,
+                "Time (With Index)": f"{t_fast:.4f}s",
+                "Speedup": speedup_str
             })
+            print("-" * 60)
 
-        df["SPEEDUP"] = df["NO_INDEXES"] / df["WITH_INDEXES"]
-
-        print("\n=====================================")
-        print("       PERFORMANCE SUMMARY TABLE")
-        print("=====================================")
-        print(df.to_string())
-        print("\n=====================================")
-
+        # Output Summary Table
+        df = pd.DataFrame(results)
+        print("\nFinal Benchmark Report")
+        print(df.to_string(index=False))
+        
         return df
+
+    def run(self):
+        return self.run_targeted_benchmark()

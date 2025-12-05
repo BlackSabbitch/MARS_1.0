@@ -5,7 +5,6 @@ class SchemaManager:
         self.db = db
 
     def run_sql_file(self, file_path):
-        """Runs SQL commands from a .sql file (schema creation)."""
         conn = self.db.get_mysql_connection()
         cursor = conn.cursor()
 
@@ -23,4 +22,5 @@ class SchemaManager:
 
     def create_schema(self):
         """Runs default schema.sql in project folder."""
-        self.run_sql_file("db_tools/schema.sql")
+        self.run_sql_file("project_db/schema.sql")
+        print("Schema was succesfully created/checked")

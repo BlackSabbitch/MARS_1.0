@@ -1,47 +1,74 @@
-import os
-import re
-import math
+import pandas as pd
 from typing import Any, Dict, List, Optional
-
-from pymongo import MongoClient, UpdateOne
 from pymongo.collection import Collection
 from pymongo.errors import BulkWriteError
-
+from database_connection_manager import DatabaseConnectionManager
 
 class MongoTools:
     """
     Generic MongoDB tools:
-    - Connection and collection access
     - Bulk write helper
-    - Index creation
-    - All shared helper functions used by data loaders
+    - Data enrichment (Federation logic)
     """
-    uri = "mongodb+srv://msamosudova:Duckling@mars-cluster.8ruotdw.mongodb.net/?appName=MARS-Cluster"
-    db_name = "anime_db"
-    collection = "animes"
+    
+    def __init__(self, db_manager: DatabaseConnectionManager):
+        self.db_manager = db_manager
 
-    def __init__(self, uri: str, db_name: str, collection: str):
-        self.uri = uri
-        self.db_name = db_name
-        self.client = MongoClient(uri)
-        self.db = self.client[db_name]
-        self.collection = collection
+    # DB access
+    def get_mongo_collection(self, collection_name: str = None) -> Collection:
+        """
+        Return a MongoDB collection. 
+        Delegates the request to the DatabaseConnectionManager.
+        """
+        return self.db_manager.get_mongo_collection(collection_name)
+    
+    # Federation / batch reading / enrichment
+    def enrich_with_synopsis(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Application-Level Join (Federation):
+        Takes a Pandas DataFrame containing a 'MAL_ID' column.
+        Fetches 'synopsis' from MongoDB for these IDs and merges it.
+        """
+        if df is None or df.empty:
+            return df
 
-    # ---------------------------------------------------------------------
-    # DB ACCESS
-    # ---------------------------------------------------------------------
-    def get_collection(self, collection_name: str) -> Collection:
-        """Return a MongoDB collection."""
-        return self.db[collection_name]
+        if "MAL_ID" not in df.columns:
+            print("Warning: DataFrame missing 'MAL_ID'. Cannot enrich from Mongo.")
+            return df
 
-    # ---------------------------------------------------------------------
-    # BULK WRITE HELPER
-    # ---------------------------------------------------------------------
+        try:
+            # Optimization: batched read
+            # Instead of iterating through the DataFrame and querying MongoDB 
+            # for each ID, we collect all IDs and execute a single query using the '$in' operator.
+            
+            # 1. Collect IDs for batching
+            mal_ids = df["MAL_ID"].astype(int).tolist()
+            
+            collection = self.get_mongo_collection("animes")
+            
+            # 2. Execute Batch Read
+            # Minimize data transfer by projecting only required fields.
+            docs = collection.find(
+                {"_id": {"$in": mal_ids}}, 
+                {"_id": 1, "synopsis": 1}
+            )
+            
+            # Optimization: in-memory mapping
+            # Converting list (has access time O(N)) to dict provides O(1) access time during the merge.
+            synopsis_map = {doc["_id"]: doc.get("synopsis", "") for doc in docs}
+            
+            df["synopsis"] = df["MAL_ID"].map(synopsis_map)
+            df["synopsis"] = df["synopsis"].fillna("Synopsis not available")
+            return df
+
+        except Exception as e:
+            print(f"MongoDB Federation failed ({e}). Returning SQL data only.")
+            df["synopsis"] = "Content unavailable (Mongo Error)"
+            return df
+
+    # Bulk write
     def safe_bulk_write(self, collection: Collection, ops: list) -> dict:
-        """
-        Execute bulk_write safely with ordered=False.
-        Returns result summary.
-        """
+        """Execute bulk_write with ordered=False."""
         if not ops:
             return {"modified": 0, "upserts": 0}
 
@@ -55,106 +82,73 @@ class MongoTools:
             print("BulkWriteError sample:", bwe.details.get("writeErrors", [])[:3])
             raise
 
-    # ---------------------------------------------------------------------
-    # INDEX CREATION (separate method, as requested)
-    # ---------------------------------------------------------------------
-    def create_indexes(self, collection: Collection, index_specs: list):
+    # Search anime IDs by text in 'synopsis'
+    def search_anime_ids_by_text(self, keywords: str, limit: int = 100) -> List[int]:
         """
-        Create multiple indexes:
-        index_specs = [
-            [("name", "text"), ("synopsis", "text")],
-            [("genres", 1)],
-            [("stats.score", -1)]
-        ]
+        Executes a Full-Text Search in MongoDB using the text index.
+        Returns a list of MAL_IDs relevant to the provided keywords.
         """
-        for spec in index_specs:
-            try:
-                collection.create_index(spec)
-            except Exception as e:
-                print(f"Index creation failed for {spec}: {e}")
+        try:
+            collection = self.get_mongo_collection("animes")
+            
+            # $text search requires a text index on 'synopsis' field
+            cursor = collection.find(
+                {"$text": {"$search": keywords}},
+                {"score": {"$meta": "textScore"}, "_id": 1}
+            ).sort([("score", {"$meta": "textScore"})]).limit(limit)
 
-    # ---------------------------------------------------------------------
-    # HELPER FUNCTIONS (moved from your original scripts)
-    # ---------------------------------------------------------------------
+            return [doc["_id"] for doc in cursor]
+            
+        except Exception as e:
+            print(f"Mongo Text Search failed: {e}")
+            return []
+
+    # Utils
+    @staticmethod
+    def lower_keys(d: Dict[str, Any]) -> Dict[str, Any]:
+        """Converts dictionary keys to lowercase for standardized access."""
+        return {k.lower(): v for k, v in d.items()}
+
+    @staticmethod
+    def split_list(s: Any) -> Optional[List[str]]:
+        """Splits a semicolon/comma separated string into a cleaned list."""
+        if s is None or str(s).strip() == "":
+            return None
+        s = str(s).replace(';', ',').strip()
+        return [item.strip() for item in s.split(',') if item.strip()]
+
+    @staticmethod
+    def to_float2(s: Any) -> Optional[float]:
+        """Converts a string to a float, rounding to 2 decimal places."""
+        try:
+            val = float(s)
+            return round(val, 2)
+        except: 
+            return None
+
+    @staticmethod
+    def get_first_nonempty(d: Dict[str, Any], keys: List[str]) -> Optional[str]:
+        """Returns the first non-None, non-empty string value for a list of keys."""
+        for key in keys:
+            val = d.get(key)
+            if val is not None and str(val).strip() != "":
+                return str(val).strip()
+        return None
+
+    @staticmethod
+    def merge_synonyms(a: List[str], b: List[str]) -> List[str]:
+        """Merges two lists and returns a de-duplicated, sorted list."""
+        merged = set(a) | set(b)
+        return sorted(list(merged))
+    
     @staticmethod
     def clean_str(s: Any) -> Optional[str]:
-        if s is None:
-            return None
+        if s is None: return None
         s = str(s).strip()
         return s if s else None
 
     @staticmethod
     def to_int(s: Any) -> Optional[int]:
         try:
-            if s is None or str(s).strip() == "":
-                return None
-            return int(s)
-        except:
-            return None
-
-    @staticmethod
-    def to_float2(s: Any) -> Optional[float]:
-        try:
-            if s is None or str(s).strip() == "":
-                return None
-            return round(float(s), 2)
-        except:
-            return None
-
-    @staticmethod
-    def lower_keys(d: Dict[Any, Any]) -> Dict[Any, Any]:
-        """Return dict with lowercase string keys."""
-        return {
-            (k.lower() if isinstance(k, str) else k): v
-            for k, v in d.items()
-        }
-
-    @staticmethod
-    def split_list(cell: Any) -> List[str]:
-        """
-        Split comma/pipe/semicolon separated values into normalized string list.
-        Removes duplicates, trims whitespace.
-        """
-        if cell is None:
-            return []
-
-        s = str(cell).strip()
-        if not s or s.upper() in {"UNKNOWN", "NONE", "NULL", "N/A"}:
-            return []
-
-        parts = re.split(r"[|;,]", s)
-        seen, out = set(), []
-        for p in parts:
-            v = p.strip()
-            if not v:
-                continue
-            if v not in seen:
-                seen.add(v)
-                out.append(v)
-        return out
-
-    @staticmethod
-    def merge_synonyms(list1: List[str], list2: List[str]) -> List[str]:
-        """Merge synonym lists, removing duplicates."""
-        seen, out = set(), []
-        for x in (list1 or []) + (list2 or []):
-            if not x:
-                continue
-            if x not in seen:
-                seen.add(x)
-                out.append(x)
-        return out
-
-    # Additional tool if needed
-    @staticmethod
-    def get_first_nonempty(d: dict, candidate_keys: list) -> Optional[str]:
-        """Return first nonempty string among provided keys."""
-        for key in candidate_keys:
-            v = d.get(key.lower())
-            if v is None:
-                continue
-            s = str(v).strip()
-            if s and s.upper() not in {"NULL", "NONE", "N/A", "UNKNOWN"}:
-                return s
-        return None
-
+            return int(s) if s is not None and str(s).strip() != "" else None
+        except: return None

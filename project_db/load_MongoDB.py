@@ -2,57 +2,28 @@ import os
 import csv
 from typing import Dict, List
 from pymongo import UpdateOne
-from db_tools.mongoDB_tools import MongoTools
-
+from mongoDB_tools import MongoTools 
 
 class LoadMongoDB:
     """
-    High-level MongoDB loader for anime datasets.
-    Contains:
-        - load_animes()
-        - load_synopsis()
-        - load_alt_names()
-
-    Uses MongoTools for:
-        - DB connection
-        - helpers (clean_str, to_int, split_list, ...)
-        - bulk writes
-        - index creation
+    MongoDB loader for anime dataset.
     """
 
     def __init__(
         self,
-        mongo_uri: str,
-        db_name: str,
+        mongo_tools: MongoTools, 
         batch_size: int = 5000,
         progress_interval: int = 50_000,
     ):
-        self.tools = MongoTools(uri=mongo_uri, db_name=db_name)
+        self.tools = mongo_tools 
         self.batch = batch_size
         self.progress_every = progress_interval
 
-    # ============================================================
-    # INDEX CREATION (SEPARATE METHOD)
-    # ============================================================
-    def create_anime_indexes(self, collection_name: str):
-        col = self.tools.get_collection(collection_name)
-        index_specs = [
-            [("name", "text"), ("synopsis", "text")],
-            [("genres", 1), ("type", 1)],
-            [("studios", 1)],
-            [("producers", 1)],
-            [("licensors", 1)],
-            [("stats.score", -1)],
-        ]
-        self.tools.create_indexes(col, index_specs)
-        print(f"Indexes created for collection '{collection_name}'.")
-
-    # ============================================================
+ 
     # 1) FULL ANIME LOADER (03_load_mongo_anime.py)
-    # ============================================================
     def load_animes(self, csv_syn_path: str, csv_meta_path: str, collection_name: str):
         tools = self.tools
-        col = tools.get_collection(collection_name)
+        col = tools.get_mongo_collection(collection_name) # Access managed collection
 
         # Load meta map
         meta_map = self._load_meta_map(csv_meta_path)
@@ -168,13 +139,12 @@ class LoadMongoDB:
         print(f"Done loading animes. processed={total:,}, upserts≈{upserts:,}")
         print("collection size:", col.estimated_document_count())
 
-    # ============================================================
-    # SUPPORT: load meta map
-    # ============================================================
+
+    # Helper: load meta map 
     def _load_meta_map(self, csv_meta_path: str) -> Dict[int, dict]:
         tools = self.tools
         if not os.path.exists(csv_meta_path):
-            print("Note: anime.csv not found → meta enrichment skipped.")
+            print("Note: anime.csv not found -> meta enrichment skipped.")
             return {}
 
         meta = {}
@@ -209,9 +179,8 @@ class LoadMongoDB:
         print(f"Loaded meta map: {len(meta):,} rows")
         return meta
 
-    # ============================================================
-    # 2) SYNOPSIS LOADER (your second script)
-    # ============================================================
+
+    # 2) Synopsis loader
     def load_synopsis(
         self,
         csv_path: str,
@@ -220,7 +189,7 @@ class LoadMongoDB:
         upsert_missing: bool = True,
     ):
         tools = self.tools
-        col = tools.get_collection(collection_name)
+        col = tools.get_mongo_collection(collection_name)
 
         ops = []
         updated = upserts = skipped = total_rows = 0
@@ -279,9 +248,7 @@ class LoadMongoDB:
               "/",
               col.estimated_document_count())
 
-    # ============================================================
-    # 3) ALT NAMES LOADER (04_load_mongo_alt_names.py)
-    # ============================================================
+    # 3) Alternative names loader
     def load_alt_names(
         self,
         csv_syn_path: str,
@@ -291,26 +258,8 @@ class LoadMongoDB:
     ):
         tools = self.tools
 
-        alt_col = tools.get_collection(alt_collection)
-        anime_col = tools.get_collection(anime_collection)
-
-        # Create indexes
-        index_specs = [
-            [("english_name", 1)],
-            [("japanese_name", 1)],
-            [("synonyms", 1)],
-        ]
-        tools.create_indexes(alt_col, index_specs)
-
-        # text index too
-        try:
-            alt_col.create_index([
-                ("english_name", "text"),
-                ("japanese_name", "text"),
-                ("synonyms", "text"),
-            ])
-        except Exception as e:
-            print("Text index creation failed:", e)
+        alt_col = tools.get_mongo_collection(alt_collection)
+        anime_col = tools.get_mongo_collection(anime_collection)
 
         # Load maps
         map_syn = self._load_alt_name_map(csv_syn_path)
@@ -354,7 +303,7 @@ class LoadMongoDB:
                 ops_alt.clear()
 
             if total % self.progress_every == 0:
-                print(f"[alt names] processed={total:,} upserts≈{upserts:,}")
+                print(f"alternative names processed={total:,} upserts≈{upserts:,}")
 
         # flush
         if ops_alt:
@@ -362,11 +311,9 @@ class LoadMongoDB:
             upserts += (res.upserted_count or 0)
 
         print(f"Done loading alternative names. processed={total:,}, upserts≈{upserts:,}")
-        print("Alt names collection size:", alt_col.estimated_document_count())
+        print("Alternative names collection size:", alt_col.estimated_document_count())
 
-    # ============================================================
-    # SUPPORT for alt names
-    # ============================================================
+    # Helter for alt names (No change)
     def _load_alt_name_map(self, csv_path: str) -> Dict[int, dict]:
         tools = self.tools
 
@@ -427,4 +374,3 @@ class LoadMongoDB:
         )
 
         return {"english_name": english, "japanese_name": japanese, "synonyms": syn}
-

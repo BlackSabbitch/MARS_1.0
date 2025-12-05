@@ -1,411 +1,365 @@
 import random
 import time
+import statistics
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pymongo import MongoClient
+from mysql.connector import Error as MySQLError
 
+# Lock for console output
+print_lock = threading.Lock()
+
+def synchronized_print(msg):
+    """Prints a message ensuring no other thread interjects."""
+    with print_lock:
+        print(msg)
 
 class ConcurrencyRatingTest:
 
     def __init__(self, db_connection):
-        """
-        db_connection = instance of DatabaseConnectionManager
-        """
         self.db = db_connection
+        self.TARGET_ANIME_ID = 1 
 
-
-    # ---------------------------------------------------------
-    # Find anime with zero ratings
-    # ---------------------------------------------------------
-    def find_unrated_anime(self):
+    # Helper: finda anime suitable for test
+    def find_zero_rated_anime(self):
+        print("Searching for an existing Anime with MEMBERS=0...")
         conn = self.db.new_mysql_connection()
-        if conn is None:
-            return None, None
+        cur = conn.cursor(dictionary=True)
+        
+        try:
+            cur.execute("""
+                SELECT s.MAL_ID, a.name 
+                FROM anime_statistics s
+                JOIN anime a ON a.MAL_ID = s.MAL_ID
+                WHERE s.members = 0 
+                LIMIT 1
+            """)
+            target = cur.fetchone()
+            
+            if target:
+                self.TARGET_ANIME_ID = target['MAL_ID']
+                print(f"Test setup: found not rated anime: '{target['name']}' (ID: {self.TARGET_ANIME_ID})")
+            else:
+                self.TARGET_ANIME_ID = 1 
+                print(f"Warning: No clean anime found. Using ID {self.TARGET_ANIME_ID}.")
+            
+            return self.TARGET_ANIME_ID
 
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT a.MAL_ID, a.name
-            FROM anime a
-            LEFT JOIN anime_user_rating r ON r.MAL_ID = a.MAL_ID
-            WHERE r.MAL_ID IS NULL
-            LIMIT 1;
-        """)
-        row = cur.fetchone()
+        except Exception as e:
+            print(f"Test setup: error{e}")
+            return None
+        finally:
+            cur.close()
+            conn.close()
 
+    def setup_environment(self, num_users):
+        target_id = self.find_zero_rated_anime()
+        if not target_id: return [], None, None
+        self.TARGET_ANIME_ID = target_id
+        
+        print(f"Test setup: Preparing {num_users} Temp Users for Anime ID {self.TARGET_ANIME_ID}...")
+        conn = self.db.new_mysql_connection()
+        cur = conn.cursor(dictionary=True, buffered=True) 
+
+        try:
+            # Snapshot Original State
+            cur.execute("SELECT members, score FROM anime_statistics WHERE MAL_ID=%s", (self.TARGET_ANIME_ID,))
+            original_sql_data = cur.fetchone() or {'members': 0, 'score': 0.0}
+
+            # RESET STATS TO ZERO 
+            cur.execute("UPDATE anime_statistics SET members=0, score=0.0 WHERE MAL_ID=%s", (self.TARGET_ANIME_ID,))
+            
+            # Reset Mongo
+            col = self.db.get_mongo_collection("animes")
+            original_mongo = col.find_one({"_id": self.TARGET_ANIME_ID}, {"members": 1, "score": 1})
+            col.update_one({"_id": self.TARGET_ANIME_ID}, {"$set": {"members": 0, "score": 0.0}})
+
+            # Create Temp Users
+            base_id = random.randint(8800000, 9000000) 
+            temp_user_ids = []
+            for i in range(num_users):
+                uid = base_id + i
+                cur.execute("INSERT IGNORE INTO users (userID) VALUES (%s)", (uid,))
+                temp_user_ids.append(uid)
+            
+            conn.commit()
+            return temp_user_ids, original_sql_data, original_mongo
+
+        except Exception as e:
+            print(f"Test setup: error {e}")
+            conn.rollback()
+            return [], None, None
+        finally:
+            cur.close()
+            conn.close()
+
+    def get_current_state(self, temp_users):
+        conn = self.db.new_mysql_connection()
+        cur = conn.cursor(dictionary=True, buffered=True) 
+        
+        cur.execute("SELECT members, score FROM anime_statistics WHERE MAL_ID=%s", (self.TARGET_ANIME_ID,))
+        stats = cur.fetchone() or {'members': 0, 'score': 0.0}
+
+        fmt = ','.join(['%s'] * len(temp_users))
+        cur.execute(f"SELECT COUNT(*) as cnt FROM anime_user_rating WHERE MAL_ID=%s AND userID IN ({fmt})", 
+                    (self.TARGET_ANIME_ID, *temp_users))
+        real_rows = int(cur.fetchone()['cnt'])
+        
         cur.close()
         conn.close()
+        return stats, real_rows
 
-        if row:
-            return row[0], row[1]
-        return None, None
-
-
-    # ---------------------------------------------------------
-    # NON-TRANSACTIONAL user action (race-conditions allowed)
-    # ---------------------------------------------------------
-    def user_action(self, mal_id, user_id):
-        print(f"\n--- USER {user_id} START ---")
-
-        # Each user gets a NEW MySQL connection (thread-safe)
+    def cleanup(self, temp_users, original_sql, original_mongo):
+        print(f"\nRollback: Restoring database...")
         conn = self.db.new_mysql_connection()
-        if conn is None:
-            print(f"[{user_id}] ERROR: MySQL Connection not available.")
-            return {"user": user_id, "error": "No MySQL connection"}
-
         cur = conn.cursor()
-
         try:
-            # ------------------ READ BEFORE ------------------
-            cur.execute("SELECT score FROM anime_statistics WHERE MAL_ID=%s", (mal_id,))
-            row = cur.fetchone()
-            before_score = float(row[0]) if row and row[0] is not None else 0.0
-            print(f"[{user_id}] READ BEFORE -> {before_score}")
+            # 1. Delete Temp Ratings
+            if temp_users:
+                fmt = ','.join(['%s'] * len(temp_users))
+                cur.execute(f"DELETE FROM anime_user_rating WHERE MAL_ID=%s AND userID IN ({fmt})", 
+                            (self.TARGET_ANIME_ID, *temp_users))
+                
+                # 2. Delete Temp Users
+                cur.execute(f"DELETE FROM users WHERE userID IN ({fmt})", tuple(temp_users))
 
-            # Force overlap between threads
-            time.sleep(random.uniform(0.10, 0.40))
-
-            # ------------------ CALCULATE NEW VALUE ------------------
-            # This is exactly how race conditions happen:
-            # each thread computes based on stale BEFORE value.
-            increment = random.randint(1, 5)
-            new_score = before_score + increment
-            print(
-                f"[{user_id}] ATTEMPT WRITE -> "
-                f"new_score={new_score}  (based on BEFORE={before_score}, +{increment})"
-            )
-
-            # ------------------ WRITE ------------------
-            cur.execute("""
-                UPDATE anime_statistics
-                SET score = %s
-                WHERE MAL_ID=%s
-            """, (new_score, mal_id))
+            # 3. Restore MySQL Stats (original data)
+            if original_sql:
+                cur.execute("UPDATE anime_statistics SET members=%s, score=%s WHERE MAL_ID=%s", 
+                            (original_sql['members'], original_sql['score'], self.TARGET_ANIME_ID))
+            
+            # 4. Restore Mongo Stats
+            if original_mongo:
+                col = self.db.get_mongo_collection("animes")
+                col.update_one({"_id": self.TARGET_ANIME_ID}, {"$set": {
+                    "members": original_mongo.get('members', 0),
+                    "score": original_mongo.get('score', 0.0)
+                }})
+            
             conn.commit()
-
-            # Force more overlap
-            time.sleep(random.uniform(0.10, 0.30))
-
-            # ------------------ READ AFTER ------------------
-            cur.execute("SELECT score FROM anime_statistics WHERE MAL_ID=%s", (mal_id,))
-            after_score = float(cur.fetchone()[0])
-            print(f"[{user_id}] READ AFTER -> {after_score}")
-
-            # ------------------ MONGO UPDATE (not part of race, just replicated) ------------------
-            col = self.db.get_mongo_collection("animes")
-            col.update_one({"_id": mal_id}, {"$set": {"score": after_score}}, upsert=True)
-
-            print(f"--- USER {user_id} DONE ---")
-
-            return {
-                "user": user_id,
-                "before": before_score,
-                "attempt": new_score,
-                "after": after_score,
-                "error": None
-            }
-
+            print("Rollback: Success. Original data restored.")
         except Exception as e:
-            print(f"[{user_id}] ERROR: {e}")
-            return {"user": user_id, "error": str(e)}
-
+            print(f"Rollback: error {e}")
         finally:
             cur.close()
             conn.close()
 
 
-    # ---------------------------------------------------------
-    # STRICT ACID TRANSACTION user operation
-    # ---------------------------------------------------------
-    def user_rate(self, mal_id, user_id):
-        print(f"\n=== TX-THREAD {user_id} START ===")
 
+    # SCENARIO 1: Unsafe operation (Lost Updates, race condition)
+    def user_action_unsafe(self, mal_id, user_id):
+        start_time = time.perf_counter()
         conn = self.db.new_mysql_connection()
-        if conn is None:
-            print(f"[{user_id}] ERROR: MySQL Connection not available.")
-            return {"user": user_id, "error": "No MySQL connection"}
-
-        cur = conn.cursor()
+        cur = conn.cursor(buffered=True)
 
         try:
-            # -----------------------------------------------------------
-            # Begin transaction
-            # -----------------------------------------------------------
-            cur.execute("START TRANSACTION;")
-            print(f"[{user_id}] BEGIN TX")
-
-            # -----------------------------------------------------------
-            # Attempt to lock row (FOR UPDATE)
-            # This line BLOCKS if another thread holds the lock.
-            # -----------------------------------------------------------
-            t0 = time.time()
-            print(f"[{user_id}] TRYING TO ACQUIRE LOCK on MAL_ID={mal_id}...")
-
-            cur.execute(
-                "SELECT score FROM anime_statistics WHERE MAL_ID=%s FOR UPDATE",
-                (mal_id,)
-            )
-
-            lock_wait = time.time() - t0
-            if lock_wait > 0.05:
-                print(f"[{user_id}] LOCK ACQUIRED after waiting {lock_wait:.3f}s "
-                    "(another TX held the lock)")
-            else:
-                print(f"[{user_id}] LOCK ACQUIRED immediately (no contention)")
-
-            # Now inside critical section — race-free zone.
+            # 1. Decide Rating
+            my_rating = random.randint(1, 10) 
+            
+            # 2. Insert Rating Row
+            cur.execute("INSERT INTO anime_user_rating (MAL_ID, userID, user_rating) VALUES (%s, %s, %s)", 
+                        (mal_id, user_id, my_rating))
+            
+            # 3. Dirty read
+            cur.execute("SELECT members, score FROM anime_statistics WHERE MAL_ID=%s", (mal_id,))
             row = cur.fetchone()
-            before_sql = float(row[0]) if row and row[0] is not None else 0.0
-            print(f"[{user_id}] SQL BEFORE -> {before_sql}")
+            curr_members = int(row[0])
+            curr_score = float(row[1])
+            
+            # Log the STALE READ and INTENT
+            synchronized_print(f"[Unsafe] User {user_id} READ: M={curr_members}, S={curr_score:.2f}. Submitting RATING {my_rating}. Writes {curr_members + 1}")
+            
+            # Delay to force overlap
+            time.sleep(random.uniform(0.1, 0.2)) 
 
-            # -----------------------------------------------------------
-            # Write rating (still inside exclusive lock)
-            # -----------------------------------------------------------
-            rating = random.randint(1, 10)
-            print(f"[{user_id}] SQL WRITE rating={rating}")
-
-            cur.execute("""
-                INSERT INTO anime_user_rating (MAL_ID, userID, user_rating)
-                VALUES (%s, %s, %s)
-                ON DUPLICATE KEY UPDATE user_rating = VALUES(user_rating)
-            """, (mal_id, user_id, rating))
-
-            # Recalculate average
-            cur.execute("SELECT AVG(user_rating) FROM anime_user_rating WHERE MAL_ID=%s", (mal_id,))
-            avg_score = float(cur.fetchone()[0])
-
-            print(f"[{user_id}] NEW AVG CALCULATED -> {avg_score}")
-
-            # Update statistics
-            cur.execute(
-                "UPDATE anime_statistics SET score=%s WHERE MAL_ID=%s",
-                (avg_score, mal_id)
-            )
-
-            # -----------------------------------------------------------
-            # Commit (releases lock)
-            # -----------------------------------------------------------
-            conn.commit()
-            print(f"[{user_id}] SQL COMMIT - score={avg_score}")
-
-            # -----------------------------------------------------------
-            # Verification read (guaranteed consistent)
-            # -----------------------------------------------------------
-            cur.execute("SELECT score FROM anime_statistics WHERE MAL_ID=%s", (mal_id,))
-            confirmed = float(cur.fetchone()[0])
-            print(f"[{user_id}] SQL AFTER COMMIT -> {confirmed}")
-
-            if confirmed != avg_score:
-                print(f"[{user_id}] WARNING: MISMATCH after commit (should never happen)")
+            # 4. Naive score calculations 
+            new_members = curr_members + 1
+            if new_members > 0:
+                total_sum = (curr_score * curr_members) + my_rating
+                new_score = total_sum / new_members
             else:
-                print(f"[{user_id}] CONFIRMED CONSISTENT WRITE (no race)")
+                new_score = float(my_rating)
 
-            # -----------------------------------------------------------
-            # Mongo update AFTER commit (safe, non-locking)
-            # -----------------------------------------------------------
-            col = self.db.get_mongo_collection("animes")
-            col.update_one({"_id": mal_id}, {"$set": {"score": avg_score}}, upsert=True)
+            # 5. Write anime statistics
+            cur.execute("UPDATE anime_statistics SET members=%s, score=%s WHERE MAL_ID=%s", 
+                        (new_members, new_score, mal_id))
+            conn.commit()
 
-            print(f"[{user_id}] MONGO UPDATED -> {avg_score}")
-            print(f"=== TX-THREAD {user_id} DONE ===")
+            # 6. Mongo
+            self.db.get_mongo_collection("animes").update_one({"_id": mal_id}, 
+                {"$set": {"members": new_members, "score": new_score}})
 
-            return {
-                "user": user_id,
-                "rating": rating,
-                "score": avg_score,
-                "wait_time": lock_wait,
-                "error": None
-            }
-
+            return {"duration": time.perf_counter() - start_time, "error": None}
         except Exception as e:
-            print(f"[{user_id}] ERROR -> {e}")
-            return {"user": user_id, "error": str(e)}
-
+            # Capture errors async
+            synchronized_print(f"[Unsafe] User {user_id} FAILED: {e}") 
+            return {"error": str(e)}
         finally:
             cur.close()
             conn.close()
 
-    # ---------------------------------------------------------
-    # Run NON-TRANSACTIONAL simulation, concurrent users, race condition
-    # ---------------------------------------------------------
-    def run_user_simulation(self, mal_id, num_users=5):
-        print("\n==============================")
-        print("      USER SIMULATION TEST")
-        print("==============================")
-        print(f"Anime MAL_ID = {mal_id}")
-        print(f"Users = {num_users}\n")
+    # SCENARIO 2: Transactional (Safe) - optimistic locking (CAS)
+    def user_action_safe(self, mal_id, user_id):
+        MAX_RETRIES = 10      
+        RETRY_DELAY = 2.0     
+        
+        start_time = time.perf_counter()
+        
+        # Initial Stagger
+        time.sleep(random.uniform(0.01, 0.1)) 
+        
+        for attempt in range(MAX_RETRIES):
+            conn = self.db.new_mysql_connection()
+            cur = conn.cursor(dictionary=True, buffered=True)
 
-        # -------------------------------
-        # Generate unique user IDs
-        # -------------------------------
-        user_ids = [300000 + i for i in range(num_users)]
+            try:
+                conn.start_transaction()
+                
+                my_rating = random.randint(1, 10)  
+                
+                # 1. Log the intent
+                if attempt == 0:
+                    synchronized_print(f"[Transact] User {user_id} STARTING attempt 1 to insert rating {my_rating}...")
+                else:
+                    synchronized_print(f"[Transact] User {user_id} RETRY {attempt+1}/{MAX_RETRIES}. Rerunning CAS...")
 
-        print("Launching threads...\n")
+                # 2. READ (Non-locked read for CAS)
+                cur.execute("SELECT members, score FROM anime_statistics WHERE MAL_ID=%s", (mal_id,))
+                stats = cur.fetchone()
+                curr_members = int(stats['members'])
+                curr_score = float(stats['score'])
+                
+                # 3. INSERT new rating record
+                cur.execute("INSERT INTO anime_user_rating (MAL_ID, userID, user_rating) VALUES (%s, %s, %s)", 
+                            (mal_id, user_id, my_rating))
 
-        # -------------------------------
-        # Run threads concurrently
-        # -------------------------------
+                # 4. CALCULATION
+                new_members = curr_members + 1
+                total_sum = (curr_score * curr_members) + my_rating
+                real_avg = total_sum / new_members if new_members > 0 else float(my_rating)
+
+                # 5. OPTIMISTIC UPDATE (Compare-and-Swap - The SOFT LOCK check)
+                cur.execute("""
+                    UPDATE anime_statistics 
+                    SET members=%s, score=%s 
+                    WHERE MAL_ID=%s AND members=%s
+                """, (new_members, real_avg, mal_id, curr_members))
+                
+                # 6. CHECK SUCCESS (rows affected)
+                if cur.rowcount == 1:
+                    # Successful CAS: Log Soft Lock acquisition and commit
+                    conn.commit()
+                    
+                    synchronized_print(f"[Transact] User {user_id} COMMITTED (SUCCESSFUL CAS). New Stats: Members={new_members}, Score={real_avg:.2f}")
+                    
+                    # 7. Mongo
+                    self.db.get_mongo_collection("animes").update_one({"_id": mal_id}, 
+                        {"$set": {"members": new_members, "score": real_avg}})
+
+                    # Success: Exit the retry loop
+                    return {"duration": time.perf_counter() - start_time, "error": None}
+                
+                else:
+                    # Failed CAS: Row was changed by another thread. Rollback and retry.
+                    conn.rollback()
+                    synchronized_print(f"[Transact] User {user_id} FAILED CAS (Data changed). Rolling back and retrying...") 
+                    time.sleep(RETRY_DELAY)
+                    continue # Go to the next attempt
+
+            except Exception as e:
+                # Handle general errors (e.g., connection fail)
+                conn.rollback()
+                synchronized_print(f"[Transact] User {user_id} CRITICAL FAILURE: {e}")
+                return {"error": str(e)}
+
+            finally:
+                cur.close()
+                conn.close()
+        
+        # Fallback if all retries fail
+        return {"error": "Max retries failed."}
+
+    # Test runner
+    def run_benchmark(self, mal_id=None, num_users=5, mode="unsafe"):
+
+        print(f"Test start: {mode.upper()} simulating {num_users} users rates")
+        print(f"{'='*80}")
+        
+        # 1. Setup
+        temp_users, orig_sql, orig_mongo = self.setup_environment(num_users)
+        if not temp_users: return
+
+        # 2. Initial state
+        start_stats, start_rows = self.get_current_state(temp_users)
+        print(f"Initial anime state:")
+        print(f"  - Score:       {start_stats['score']:.2f} (Reset for test)")
+        print(f"  - Members:     {start_stats['members']}")
+        print(f"  - Real Rows:   {start_rows}")
+        print("-" * 80)
+
+        target_func = self.user_action_unsafe if mode == "unsafe" else self.user_action_safe
+
+        # 3. Run tests
         results = []
-        with ThreadPoolExecutor(max_workers=num_users) as executor:
-            futures = [
-                executor.submit(self.user_action, mal_id, uid)
-                for uid in user_ids
-            ]
+        concurrency_level = num_users
+        
+        # Unsafe scenario
+        if mode == "unsafe":
+            results = self._execute_concurrency_test(self.TARGET_ANIME_ID, temp_users, target_func, concurrency_level)
+            
+        # Safe scenario (CAS)
+        elif mode == "safe":
+            results = self._execute_concurrency_test(self.TARGET_ANIME_ID, temp_users, target_func, concurrency_level)
 
-            for f in as_completed(futures):
-                result = f.result()
-                results.append(result)
 
-        # -------------------------------
-        # FINAL SCORE FROM DATABASE
-        # -------------------------------
-        conn = self.db.new_mysql_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT score FROM anime_statistics WHERE MAL_ID=%s", (mal_id,))
-        final_score = cur.fetchone()[0]
-        cur.close()
-        conn.close()
+        # 4. Final state
+        print("-" * 80)
+        end_stats, end_rows = self.get_current_state(temp_users)
+        
+        # Analysis
+        lost_members = end_rows - end_stats['members']
+        
+        print(f"Final anime state:")
+        print(f"  - Score:       {end_stats['score']:.2f}")
+        print(f"  - Members:     {end_stats['members']} (Final Count)")
+        print(f"  - Real Rows:   {end_rows} (Actual Inserts)")
 
-        print("\n==============================")
-        print("           SUMMARY")
-        print("==============================\n")
+        # 5. Summary
+        print("\nSummary:")
+        
+        # Calculate Response Times
+        success_ops = [r for r in results if not r.get("error")]
+        durations = [r["duration"] for r in success_ops]
+        avg_response_time = statistics.mean(durations) if durations else 0
 
-        # Sort results by user for consistent reading
-        results_sorted = sorted(results, key=lambda r: r["user"])
-
-        for r in results_sorted:
-            if r.get("error"):
-                print(f"[User {r['user']}] ERROR -> {r['error']}")
-                continue
-
-            before = r["before"]
-            attempt = r["attempt"]
-            after = r["after"]
-
-            print(
-                f"User {r['user']:>6} | "
-                f"BEFORE={before:>5} | "
-                f"ATTEMPT={attempt:>5} | "
-                f"AFTER={after:>5}"
-            )
-
-        # -------------------------------
-        # DETECT RACE CONDITIONS
-        # -------------------------------
-        print("\n==============================")
-        print("     RACE CONDITION ANALYSIS")
-        print("==============================\n")
-
-        # Collect all attempted writes
-        attempts = [r["attempt"] for r in results_sorted if r.get("attempt") is not None]
-
-        if len(set(attempts)) == 1:
-            print("No visible race condition: all users attempted same value.")
+        print(f"Avg Response Time: {avg_response_time:.4f} sec")
+        
+        errors = [r for r in results if r.get("error")]
+        
+        if mode == "unsafe":
+            if lost_members > 0:
+                print(f"Data loss: {lost_members} votes count lost.")
+            elif end_rows > 0:
+                print("No data loss observed (Lucky run).")
+            else:
+                print("ALL OPERATIONS FAILED.")
         else:
-            print("Race conditions DETECTED:")
-            print("- Multiple users read SAME initial value (stale read).")
-            print("- Writes based on old value overlapped.")
-            print("- Some updates may be LOST.")
-
-        # Identify lost updates
-        print("\nLost update analysis:")
-        for r in results_sorted:
-            if r.get("attempt") != final_score:
-                print(
-                    f"User {r['user']} wrote {r['attempt']} "
-                    f"but final score is {final_score} -> LOST UPDATE"
-                )
+            if lost_members == 0 and end_rows == num_users:
+                print("Integrity OK: Counter matches Inserts exactly.")
+            elif len(errors) > 0:
+                print(f"Contention: {len(errors)} transactions failed due to deadlock.")
             else:
-                print(
-                    f"✔ User {r['user']} wrote {r['attempt']} "
-                    f"which MATCHES final score -> LAST WRITER WINS"
-                )
+                print("Unknown error accured.")
 
-        print("\n==============================")
-        print(f"FINAL DATABASE SCORE = {final_score}")
-        print("==============================\n")
-
-        return final_score, results_sorted
-
-
-    # ---------------------------------------------------------
-    # Run STRICT ACID TRANSACTION simulation
-    # ---------------------------------------------------------
-    def run_transactional_simulation(self, mal_id, num_users=5):
-        print("\n=== STRICT TRANSACTIONAL USER SIMULATION ===")
-        print(f"MAL_ID: {mal_id}")
-        print(f"Users: {num_users}")
-
-        user_ids = [200000 + i for i in range(num_users)]
-        results = []
-
-        with ThreadPoolExecutor(max_workers=num_users) as exec:
-            futures = [exec.submit(self.user_rate, mal_id, uid) for uid in user_ids]
-
-            for f in as_completed(futures):
-                results.append(f.result())
-
-        print("\n=== STRICT TX SUMMARY ===")
-        for r in results:
-            print(r)
-
+        # 6. Rollback
+        self.cleanup(temp_users, orig_sql, orig_mongo)
         return results
 
+    def _execute_concurrency_test(self, mal_id, temp_users, target_func, concurrency_level):
+        """Helper to run the thread pool."""
+        results = []
+        with ThreadPoolExecutor(max_workers=concurrency_level) as executor:
+            futures = [executor.submit(target_func, mal_id, uid) for uid in temp_users]
+            for f in as_completed(futures):
+                results.append(f.result())
+        return results
 
-    # ---------------------------------------------------------
-    # Clean up after tests
-    # ---------------------------------------------------------
-    def reverse_all_changes(self, mal_id):
-        print("\n==============================")
-        print(" REVERSING ALL TEST CHANGES")
-        print("==============================")
-
-        print(f"\nTarget MAL_ID = {mal_id}")
-
-        conn = self.db.new_mysql_connection()
-        if conn is None:
-            print("MySQL connection unavailable.")
-            return
-
-        cur = conn.cursor()
-
-        # Delete test ratings
-        print("\nRemoving test ratings (userID >= 200000)...")
-        cur.execute("""
-            DELETE FROM anime_user_rating
-            WHERE MAL_ID=%s AND userID >= 200000
-        """, (mal_id,))
-        deleted = cur.rowcount
-        conn.commit()
-        print(f"Deleted {deleted} test ratings")
-
-        # Recompute real score
-        print("\nRecomputing real MySQL score...")
-        cur.execute("""
-            SELECT AVG(user_rating)
-            FROM anime_user_rating
-            WHERE MAL_ID=%s
-        """, (mal_id,))
-        row = cur.fetchone()
-        real_score = float(row[0]) if row and row[0] is not None else None
-        print(f"Real average score = {real_score}")
-
-        cur.execute("""
-            UPDATE anime_statistics SET score=%s WHERE MAL_ID=%s
-        """, (real_score, mal_id))
-        conn.commit()
-        print("anime_statistics updated")
-
-        cur.close()
-        conn.close()
-
-        # Update MongoDB
-        print("\nUpdating MongoDB...")
-        col = self.db.get_mongo_collection("animes")
-
-        if real_score is None:
-            col.update_one({"_id": mal_id}, {"$unset": {"score": ""}})
-            print("No real score -> removing MongoDB score field")
-        else:
-            col.update_one({"_id": mal_id}, {"$set": {"score": real_score}})
-            print("MongoDB updated")
-
-        print("\n=== REVERSAL COMPLETE ===")
