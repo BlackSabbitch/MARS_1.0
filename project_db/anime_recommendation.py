@@ -147,8 +147,19 @@ class AnimeRecommendation:
 
     @classmethod
     def print_get_raw_anime_reviews(cls, connection, mongo_tools, mal_id, limit=10):
-        print(f"\n--- [2] Raw Reviews for Anime ID {mal_id} ---")
-        cls._print_results(cls.get_raw_anime_reviews(connection, mongo_tools, mal_id), limit)
+        anime_name = "Unknown"
+        try:
+            cursor = connection.cursor()
+            cursor.execute(f"SELECT name FROM anime WHERE MAL_ID = {mal_id}")
+            result = cursor.fetchone()
+            if result:
+                anime_name = result[0]
+            cursor.close()
+        except:
+            pass
+        print(f"\n--- [2] Raw Reviews for: '{anime_name}' (ID {mal_id}) ---")
+        df = cls.get_raw_anime_reviews(connection, mongo_tools, mal_id)
+        cls._print_results(df, limit)
 
     @classmethod
     def print_recommend_global_top30(cls, connection, mongo_tools, limit=10):
