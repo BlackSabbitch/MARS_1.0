@@ -1,7 +1,6 @@
 import json
 import ijson
 import pandas as pd
-import networkx as nx
 from datetime import datetime
 from collections import defaultdict
 from itertools import combinations
@@ -9,75 +8,42 @@ import pickle
 import gc
 import os
 import igraph as ig
+from project_cda.tag_formatter import log
 
 
 class AnimeGraphBuilder:
 
-    def __init__(self, users_csv_path, user_dict_json_path, anime_csv_path):
+    def __init__(self, users_csv_path, user_dict_json_path, anime_csv_path=None):
         self.users_csv_path = users_csv_path
         self.user_dict_json_path = user_dict_json_path
-        self.anime_csv_path = anime_csv_path
-        # self.anime_info = self._load_anime_info()
-
-    # def _load_anime_info(self) -> dict:
-    #     df_anime = pd.read_csv(self.anime_csv_path)
-
-    #     anime_info = {
-    #         int(row["anime_id"]): {
-    #             "title": row.get("title", ""),
-    #             "score": row.get("score", 0),
-    #             "source": row.get("source", ""),
-    #             "studio": row.get("studio", ""),
-    #             "episodes": row.get("episodes", 0)
-    #         }
-    #         for _, row in df_anime.iterrows()
-    #     }
-    #     return anime_info
+        log(f"Anime Graph Builder initialzed for", tag="AGB", level="DEBUG")
 
     def get_users_by_year(self, year):
         user_df = pd.read_csv(self.users_csv_path, usecols=["username", "join_date"])
+        # Быстрый парсинг дат
         user_df["join_date_parsed"] = pd.to_datetime(user_df["join_date"], errors="coerce")
         user_df["join_year"] = user_df["join_date_parsed"].dt.year
 
         users = set(user_df.loc[user_df["join_year"] <= year, "username"])
-        print(f"Users joined until {year}: {len(users)}")
+        log(f"Users joined until {year}: {len(users)}", tag="AGB", level="DEBUG")
         return users
-
-    def build_graph(self, edges, node_counts=None, output_path=None) -> nx.Graph:
-
-        G = nx.Graph()
-
-        for (a1, a2), w in edges.items():
-            G.add_edge(a1, a2, weight=w)
-
-        print(f"Graph constructed: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
-
-        for node in G.nodes():
-            nx.set_node_attributes(G, {node: {"title": str(node)}})   # Если нет информации, просто ставим ID в качестве названия
-
-        # 3. [НОВОЕ] Добавляем популярность (Total Voters)
-        if node_counts is not None:
-            # node_counts это dict {anime_id: count}
-            # Мы записываем это в атрибут 'popularity'
-            nx.set_node_attributes(G, node_counts, "popularity")
-
-        if output_path:
-            self._save_graph(G, output_path)
-
-        return G
 
     def _collect_stats(self, year, max_users):
         """
-        INTERNAL METHOD: Тяжелая работа по чтению и подсчету.
-        Ничего не знает о формулах весов. Просто считает сырые факты.
+        Сбор статистики: пересечения (edges) и популярность (nodes).
+        Возвращает:
+          raw_intersections: dict {(id1, id2): count}
+          node_counts: dict {id: count}
         """
         users_allowed = self.get_users_by_year(year)
         
+        # Используем int для ключей, это быстрее чем str
         intersection_counts = defaultdict(int)
         node_counts = defaultdict(int)
         count = 0
 
         with open(self.user_dict_json_path, "r", encoding="utf8") as f:
+            # ijson позволяет читать огромный файл потоково
             parser = ijson.kvitems(f, "")
             
             for username, anime_list in parser:
@@ -85,12 +51,11 @@ class AnimeGraphBuilder:
                     continue
 
                 count += 1
-                if count % 5000 == 0: # Чуть реже спамим в консоль
-                    print(f"Processed {count} users...")
-                if count > max_users:
+                if count % 10000 == 0:
+                    log(f"Processed {count} users...", tag="AGB", level="INFO")
+                if max_users and count > max_users:
                     break
 
-                # Твоя оптимизированная фильтрация
                 filtered_anime_ids = [
                     anime_id
                     for anime_id, vote, timestamp in anime_list
@@ -98,49 +63,39 @@ class AnimeGraphBuilder:
                     if vote != 0 and 2000 < int(timestamp[:4]) <= year
                 ]
                 
-                # Убираем дубли (на всякий случай) и сортируем для combinations
+                # Уникальные ID для combinations
                 unique_anime_ids = sorted(set(filtered_anime_ids))
 
-                # 1. Считаем популярность (нужно и для Jaccard, и для Raw как атрибут)
+                # 1. Считаем популярность
                 for anime_id in unique_anime_ids:
                     node_counts[anime_id] += 1
 
-                # 2. Считаем пересечения (Raw weight)
+                # 2. Считаем пересечения
                 for a1, a2 in combinations(unique_anime_ids, 2):
                     intersection_counts[(a1, a2)] += 1
                     
         return intersection_counts, node_counts
 
-    def build_edges(self, year: int, max_users: int = 100000, method: str = "jaccard", threshold: float = 0):   # -> dict, dict
+    def build_edges(self, year: int, max_users: int = 100000, method: str = "jaccard", threshold: float = 0):
         """
-        Публичный метод. Выбирает стратегию расчета весов.
-        Arguments:
-            method: 'jaccard' | 'raw'
-            threshold: минимальный вес ребра (для Jaccard - от 0 до 1, для Raw - кол-во пересечений)
+        Считает веса ребер на основе статистики.
+        Возвращает:
+          edges_list: list of tuples (source_id, target_id, weight)
+          node_counts: dict {anime_id: count}
         """
-        print(f"Building stats for {year}...")
-        
-        # 1. Запускаем тяжелый сборщик один раз
+        log(f"Building stats for {year}...", tag="AGB", level="INFO")
         raw_intersections, node_counts = self._collect_stats(year, max_users)
         
-        final_edges = {}
-        print(f"Calculating weights: {method.upper()} (Threshold: {threshold})...")
-
-        # 2. Быстрый постпроцессинг в памяти
+        final_edges = [] # Список кортежей для igraph [(u, v, w), ...]
+        log(f"Calculating Jaccard weights: {method.upper()} (Threshold: {threshold})...", tag="AGB", level="INFO")
         if method == "raw":
-            # Для Raw threshold — это минимальное кол-во общих групп (например, 2 или 5)
-            # Если threshold=0, берем всё.
             cutoff = int(threshold) if threshold > 1 else 0
-
-            for pair, count in raw_intersections.items():
-                if count > cutoff: 
-                    final_edges[pair] = float(count)
+            for (u, v), count in raw_intersections.items():
+                if count > cutoff:
+                    final_edges.append((u, v, float(count)))
 
         elif method == "jaccard":
-            # Для Jaccard threshold — это доля (например, 0.05)
-            # Дефолтная защита от шума (хотя бы 0.001), если threshold передан как 0
             min_w = threshold if threshold > 0 else 0.001
-
             for (u, v), intersection in raw_intersections.items():
                 size_u = node_counts[u]
                 size_v = node_counts[v]
@@ -148,99 +103,172 @@ class AnimeGraphBuilder:
                 union = size_u + size_v - intersection
                 if union > 0:
                     w = intersection / union
-                    if w > min_w: # Отсечка шума
-                        final_edges[(u, v)] = w
-        
+                    if w > min_w:
+                        final_edges.append((u, v, w))
         else:
             raise ValueError(f"Unknown method: {method}")
 
-        print(f"Edges built: {len(final_edges)}")
-        
-        # Возвращаем и ребра, и популярность (она нужна всегда!)
+        log(f"Edges prepared: {len(final_edges)}", tag="AGB", level="INFO")
         return final_edges, node_counts
 
-    def sparsify_backbone(self, G: ig.Graph, weight="weight", alpha=0.05, output_path=None) -> nx.Graph:
-        print(f"Graph loaded: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
-
-        print(f"Running Backbone (alpha={alpha})...")
-        B = nx.Graph()
-        B.add_nodes_from(G.nodes(data=True))
+    def build_graph(self, edges_list, node_counts, output_path=None) -> ig.Graph:
+        """
+        Создает igraph.Graph из списка ребер.
+        edges_list: [(u_real_id, v_real_id, weight), ...]
+        """
+        log("Constructing iGraph...", tag="AGB", level="INFO")        
+        # 1. Собираем все уникальные узлы
+        # Нам нужно маппить Real ID -> 0..N-1
+        unique_nodes = set()
+        for u, v, _ in edges_list:
+            unique_nodes.add(u)
+            unique_nodes.add(v)
         
-        for u in G.nodes():
-            neighbors = list(G[u].items())
-            k = len(neighbors)
-            if k < 2:
-                continue
-                
-            w_total = sum(d.get(weight, 1.0) for _, d in neighbors)
-            if w_total == 0:
+        # Если есть изолированные узлы в node_counts, которые мы хотим оставить?
+        # Обычно в графах похожести изолированные не нужны, берем только тех, кто в ребрах.
+        # Но если нужно добавить популярность для всех, можно расширить unique_nodes keys из node_counts.
+        
+        sorted_nodes = sorted(list(unique_nodes))
+        node_map = {real_id: idx for idx, real_id in enumerate(sorted_nodes)}
+        
+        # 2. Создаем граф
+        G = ig.Graph(len(sorted_nodes), directed=False)
+        
+        # 3. Атрибуты узлов
+        # 'name' - стандартный атрибут для лейблов в igraph
+        # Преобразуем в строки, так как iGraph иногда капризен с типами в name при сохранении в gml/graphml
+        G.vs["name"] = [str(nid) for nid in sorted_nodes] 
+        
+        # Атрибут популярности
+        if node_counts:
+            # get(nid, 0) на случай, если вдруг узел попал в ребра, но не в counts (невозможно в текущей логике, но безопасно)
+            G.vs["popularity"] = [node_counts.get(nid, 0) for nid in sorted_nodes]
+
+        # 4. Добавляем ребра (Векторизованно!)
+        # iGraph очень быстр, если давать ему списки кортежей (id1, id2)
+        edges_to_add = []
+        weights = []
+        
+        for u, v, w in edges_list:
+            edges_to_add.append((node_map[u], node_map[v]))
+            weights.append(w)
+            
+        G.add_edges(edges_to_add)
+        G.es["weight"] = weights
+
+        log(f"Graph constructed: {G.vcount()} nodes, {G.ecount()} edges", tag="AGB", level="INFO")
+        if output_path:
+            self._save_graph(G, output_path)
+
+        return G
+
+    def sparsify_knn(self, G: ig.Graph, k: int = 20, output_path=None) -> ig.Graph:
+        """
+        Оставляет Top-K соседей для каждого узла.
+        В iGraph это можно сделать намного быстрее, чем в NetworkX.
+        """
+        log(f"Running KNN (k={k})...", tag="AGB", level="INFO")
+        # Если граф маленький, можно делать через матрицу смежности, но для больших лучше итерироваться.
+        # Мы создадим список ID ребер, которые нужно ОСТАВИТЬ.
+        
+        edges_to_keep = set()
+        
+        # G.vs - итератор по узлам
+        # Для ускорения используем внутренние индексы (0..N)
+        for v_idx in range(G.vcount()):
+            # Получаем инцидентные ребра (их ID)
+            edge_ids = G.incident(v_idx, mode="ALL")
+            if not edge_ids:
                 continue
             
-            for v, d in neighbors:
-                w = d.get(weight, 1.0)
+            # Получаем веса этих ребер
+            # G.es[edge_ids] возвращает последовательность ребер
+            # Получение атрибутов списком быстрее цикла
+            weights = G.es[edge_ids]["weight"]
+            
+            # Нам нужны пары (edge_id, weight)
+            # Сортируем по весу убыванию
+            ew_pairs = sorted(zip(edge_ids, weights), key=lambda x: x[1], reverse=True)
+            
+            # Берем топ K ребер
+            top_k = ew_pairs[:k]
+            
+            # Добавляем ID ребер в сет "на сохранение"
+            for eid, _ in top_k:
+                edges_to_keep.add(eid)
+        
+        log(f"KNN filtering: keeping {len(edges_to_keep)} out of {G.ecount()} edges", tag="AGB", level="INFO")
+        
+        # Создаем подграф
+        # subgraph_edges создает новый граф, содержащий только указанные ребра и ВСЕ узлы
+        knn_G = G.subgraph_edges(list(edges_to_keep), delete_vertices=False)
+        
+        # Опционально: удалить изолированные узлы, если они появились после обрезки
+        # knn_G.vs.select(_degree=0).delete() 
+        
+        if output_path:
+            self._save_graph(knn_G, output_path)
+            
+        return knn_G
+
+    def sparsify_backbone(self, G: ig.Graph, alpha=0.05, output_path=None) -> ig.Graph:
+        """
+        Disparity Filter (Backbone).
+        Портировано под iGraph.
+        """
+        log(f"Running Backbone (alpha={alpha})...", tag="AGB", level="INFO")
+        edges_to_keep = set()
+        
+        # Итерируемся по узлам
+        for v_idx in range(G.vcount()):
+            edge_ids = G.incident(v_idx, mode="ALL")
+            k = len(edge_ids)
+            if k < 2:
+                continue
+            
+            weights = G.es[edge_ids]["weight"]
+            w_total = sum(weights)
+            if w_total == 0: continue
+            
+            # Формула Disparity Filter
+            for eid, w in zip(edge_ids, weights):
                 p = w / w_total
-                
                 try:
                     alpha_uv = 1 - (k - 1) * (1 - p)**(k - 1)
-                except ZeroDivisionError:
+                except (ZeroDivisionError, ArithmeticError): # защита от float issues
                     alpha_uv = 1.0
                 
                 if alpha_uv < alpha:
-                    B.add_edge(u, v, **d)
+                    edges_to_keep.add(eid)
         
-        print(f"Backbone result: {B.number_of_edges()} edges")
+        log(f"Backbone filtering: keeping {len(edges_to_keep)} out of {G.ecount()} edges", tag="AGB", level="INFO")
 
-      
+        backbone_G = G.subgraph_edges(list(edges_to_keep), delete_vertices=False)
+        
         if output_path:
-            self._save_graph(B, output_path)
-
-        return B
-
-    def sparsify_knn(self, G: ig.Graph, k: int = 20, output_path=None) -> nx.Graph:
-        """
-        Оставляет Top-K связей по весу для каждого узла.
-        Результат — неориентированный граф.
-        Ребро (u, v) существует, если v входит в топ-k у u, ИЛИ u входит в топ-k у v.
-        """
-        print(f"Running KNN (k={k})...")
-        # Создаем новый пустой граф. Копировать весь g дорого.
-        sparse_g = nx.Graph()
-        
-        # Копируем узлы (чтобы не потерять изолированные, если такие нужны, или атрибуты)
-        sparse_g.add_nodes_from(G.nodes(data=True))
-        
-        for node in G.nodes():
-            if len(G[node]) == 0:
-                continue
-                
-            # Получаем список соседей: [(neighbor, weight), ...]
-            # Предполагаем, что вес лежит в атрибуте 'weight'
-            neighbors = [
-                (neighbor, data['weight']) 
-                for neighbor, data in G[node].items()
-            ]
+            self._save_graph(backbone_G, output_path)
             
-            # Сортируем по весу (убывание) и берем топ-K
-            # Срез [:k] безопасен, даже если соседей меньше k
-            top_k_neighbors = sorted(neighbors, key=lambda x: x[1], reverse=True)[:k]
-            
-            # Добавляем ребра в новый граф.
-            # Так как граф неориентированный, повторное добавление ребра (u, v) 
-            # просто перезапишет его (или проигнорируется, если без атрибутов), что нам и нужно.
-            for neighbor, weight in top_k_neighbors:
-                sparse_g.add_edge(node, neighbor, weight=weight)
-                
-        print(f"KNN result: {sparse_g.number_of_edges()} edges")
+        return backbone_G
 
-        if output_path:
-            self._save_graph(sparse_g, output_path)
-        
-        return sparse_g
-
-    def _save_graph(self, G, path):
+    def _save_graph(self, G: ig.Graph, path):
         directory = os.path.dirname(path)
         if directory and not os.path.exists(directory):
             os.makedirs(directory, exist_ok=True)
+            
+        # iGraph pickle — это просто пикл объекта Graph.
+        # Это самый быстрый и надежный способ для Python-to-Python
         with open(path, "wb") as f:
             pickle.dump(G, f)
-        print(f"Graph saved to: {path}")
+        
+        # Если нужна совместимость с Gephi, можно сохранить в GML или GraphML
+        # G.write_graphml(str(path).replace('.pickle', '.graphml'))
+
+        log(f"Graph saved to: {path}", tag="AGB", level="INFO")
+
+# --- Пример использования ---
+# if __name__ == "__main__":
+    # builder = AnimeGraphBuilder("users.csv", "users_dict.json")
+    # edges, counts = builder.build_edges(2015, method="jaccard", threshold=0.05)
+    # g = builder.build_graph(edges, counts, output_path="graphs/2015_full.pickle")
+    # g_knn = builder.sparsify_knn(g, k=10, output_path="graphs/2015_knn.pickle")
+    # pass

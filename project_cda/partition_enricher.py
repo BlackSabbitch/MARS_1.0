@@ -56,6 +56,9 @@ class PartitionEnricher:
         # Проверка, что ключ есть в обоих файлах
         if self.key_col not in df_part.columns:
             raise ValueError(f"Partition file is missing key column: {self.key_col}")
+        
+        df_part[self.key_col] = df_part[self.key_col].astype('Int64')
+        self.meta_df[self.key_col] = self.meta_df[self.key_col].astype('Int64')
 
         return df_part.merge(self.meta_df, on=self.key_col, how='left')
 
