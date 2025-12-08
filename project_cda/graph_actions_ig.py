@@ -1,13 +1,14 @@
 import pickle
 import igraph as ig
+from matplotlib import pyplot as plt
 import numpy as np
 import os
 import networkx as nx
 import pandas as pd
-
-from project_cda.graph_io import GraphIO
-
-
+import matplotlib.pyplot as plt
+import numpy as np
+# from graph_metrics import GraphMetricsIG 
+from graph_io import GraphIO
 class GraphActionsIG:
     """
     Unified class for weighted graph analytics using igraph.
@@ -31,173 +32,380 @@ class GraphActionsIG:
         Always returns a NetworkX graph.
         """
         return GraphIO.load(path)
-
+    
     @staticmethod
-    def convert_nx_to_igraph(G_nx: nx.Graph):
+    def get_graph(path: str) -> ig.Graph:
         """
-        Convert a NetworkX graph (with edge weights) to igraph.
+        Universal graph loader from pickle-file.
         """
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"No file with graph: {path}")
 
-        nodes = list(G_nx.nodes())
-        mapping = {node: idx for idx, node in enumerate(nodes)}
+        print(f"Loading file with graph: {os.path.basename(path)}...", flush=True)
 
-        edges = []
-        weights = []
+        try:
+            with open(path, "rb") as f:
+                loaded_obj = pickle.load(f)
+        except Exception as e:
+            raise ValueError(f"Error reading pickle file: {e}")
 
-        for u, v, attrs in G_nx.edges(data=True):
-            edges.append((mapping[u], mapping[v]))
-            weights.append(float(attrs.get("weight", 1.0)))
+        if isinstance(loaded_obj, (nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph)):
+            print(f"NetworkX graph ({type(loaded_obj).__name__}). Converting to iGraph...", flush=True)
+            
+            g_ig, _ = GraphActionsIG.convert_nx_to_igraph(loaded_obj)
+            
+        elif isinstance(loaded_obj, ig.Graph):
+            print(f"Object is iGraph", flush=True)
+            g_ig = loaded_obj
+            
+        else:
+            raise TypeError(f"Not supported object type: {type(loaded_obj)}")
 
-        g = ig.Graph()
-        g.add_vertices(len(nodes))
-        g.add_edges(edges)
-        g.es["weight"] = weights
+        if "weight" not in g_ig.es.attribute_names():
+            print("No weight attribute in iGraph, metrics can be calculated incorrectly", flush=True)
+        else:
+            w = g_ig.es["weight"]
+            print(f"Edges: {g_ig.ecount()}. Weights (min/max): {min(w):.4f} / {max(w):.4f}", flush=True)
 
-        # copy node attributes
-        for attr in G_nx.nodes[nodes[0]].keys():
-            g.vs[attr] = [G_nx.nodes[n].get(attr, None) for n in nodes]
+        return g_ig
+    
 
-        g.vs["nx_id"] = nodes  # preserve original node IDs
-
-        return g, mapping
-   
     @staticmethod
-    def get_basic_metrics(g: ig.Graph) -> dict:
-        degrees = g.strength(weights=g.es["weight"]) if "weight" in g.es.attribute_names() else g.degree()
+    def get_degree_data(g: ig.Graph, metric_type: str = "degree") -> list:
+        """
+        Collects data for distribution plotting.
+        
+        Args:
+            g: The igraph object.
+            metric_type: 
+                - "degree": Counts connections (Standard for Scale-Free checks).
+                - "strength": Sums edge weights (Intensity of activity).
+        """
+        if metric_type == "strength":
+            if "weight" in g.es.attribute_names():
+                return g.strength(weights="weight")
+            else:
+                # Fallback if no weights exist
+                print("Warning: Graph is unweighted. Returning standard degree.")
+                return g.degree()
+        
+        # Default to simple degree (topology)
+        return g.degree()
+    
+    
+    @staticmethod
+    def collect_metric_history(graph_paths_by_year: dict) -> dict:
+        """
+        Iterates through all years and collects scalar metrics for time-series plotting.
+        Includes DEBUG prints to fix missing data issues.
+        """
+        from project_cda.graph_metrics import GraphMetricsIG
 
-        return {
-            "Number of nodes": g.vcount(),
-            "Number of edges": g.ecount(),
-            "Average degree (weighted)": float(np.mean(degrees)),
-            "Degree std (weighted)": float(np.std(degrees)),
-            "Connected components": len(g.components()),
-            "LCC size": max(len(c) for c in g.components())
+        history = {
+            "avg_path_len": {},
+            "clustering": {},
+            "diameter": {}
         }
 
-    @staticmethod
-    def get_path_metrics(g: ig.Graph) -> dict:
-        comps = g.components()
-        lcc_vertices = comps.giant().vs.indices
-        g_lcc = g.subgraph(lcc_vertices)
+        sorted_years = sorted(graph_paths_by_year.keys())
+        print(f"\n--- Collecting Metric History for {len(sorted_years)} years ---")
 
-        try:
-            diam = g_lcc.diameter(weights="weight")
-        except:
-            diam = None
-
-        try:
-            rad = g_lcc.radius(weights="weight")
-        except:
-            rad = None
-
-        try:
-            ecc = g_lcc.eccentricity(weights="weight")
-            ecc_mean = float(np.mean(ecc))
-        except:
-            ecc_mean = None
-
-        try:
-            apl = g_lcc.average_path_length(weights="weight")
-        except:
-            apl = None
-
-        return {
-            "Weighted diameter": diam,
-            "Weighted radius": rad,
-            "Mean eccentricity (weighted)": ecc_mean,
-            "Avg path length (weighted LCC)": apl
-        }
-
-   
-    @staticmethod
-    def get_centrality_metrics(g: ig.Graph) -> dict:
-        try:
-            closeness = g.closeness(weights="weight")
-            closeness_mean = float(np.mean(closeness))
-        except:
-            closeness_mean = None
-
-        try:
-            betw = g.betweenness(weights="weight", directed=False)
-            betw_mean = float(np.mean(betw))
-        except:
-            betw_mean = None
-
-        try:
-            eig = g.eigenvector_centrality(weights="weight")
-            eig_mean = float(np.mean(eig))
-        except:
-            eig_mean = None
-
-        return {
-            "Mean closeness (weighted)": closeness_mean,
-            "Mean betweenness (weighted)": betw_mean,
-            "Mean eigenvector (weighted)": eig_mean
-        }
-
-    @staticmethod
-    def get_structural_metrics(g: ig.Graph) -> dict:
-        try:
-            clustering = g.transitivity_local_undirected(weights=g.es["weight"], mode="zero")
-            clustering_mean = float(np.mean(clustering))
-        except:
-            clustering_mean = None
-
-        try:
-            global_trans = g.transitivity_undirected(weights=g.es["weight"])
-        except:
-            global_trans = None
-
-        try:
-            core_num = g.coreness()
-            core_mean = float(np.mean(core_num))
-        except:
-            core_mean = None
-
-        return {
-            "Clustering coefficient mean (weighted)": clustering_mean,
-            "Transitivity (weighted)": global_trans,
-            "Core number mean": core_mean
-        }
-
-
-    @staticmethod
-    def get_full_metrics_dict(g: ig.Graph, graph_name: str = "Graph") -> dict:
-        metrics = {"Graph": graph_name}
-
-        metrics.update(GraphActionsIG.get_basic_metrics(g))
-        metrics.update(GraphActionsIG.get_path_metrics(g))
-        metrics.update(GraphActionsIG.get_centrality_metrics(g))
-        metrics.update(GraphActionsIG.get_structural_metrics(g))
-
-        return metrics
-
-    @staticmethod
-    def print_graph_metrics(metrics: dict):
-        print("\n======= Weighted Graph metrics summary =======")
-        for key, value in metrics.items():
-            label = f"{key:<40}"
-
-            if value is None:
-                print(f"{label}: N/A")
-                continue
-
-            if isinstance(value, str):
-                print(f"{label}: {value}")
-                continue
-
+        for i, year in enumerate(sorted_years, 1):
+            print(f"  > [{i}/{len(sorted_years)}] Analyzing year {year}...", flush=True)
+            path = graph_paths_by_year[year]
+            
             try:
-                v = float(value)
-                if np.isnan(v):
-                    print(f"{label}: N/A")
-                elif abs(v - int(v)) < 1e-12:
-                    print(f"{label}: {int(v)}")
-                else:
-                    print(f"{label}: {v:.4f}")
-            except:
-                print(f"{label}: {value}")
-        print("=====================================\n")
+                g = GraphActionsIG.get_graph(path)
+                
+                # path_metrics = GraphMetricsIG.get_path_metrics(g)
+                struct_metrics = GraphMetricsIG.get_structural_metrics(g)
 
+                # --- DEBUG: Print keys for the first year so we see what's wrong ---
+                if i == 1:
+                    print(f"    [DEBUG] Available Path Metric Keys: {list(path_metrics.keys())}")
+
+                # 1. Clustering
+                history["clustering"][year] = struct_metrics.get("Clustering coefficient mean (weighted)")
+
+                # 2. Avg Path Length
+                # history["avg_path_len"][year] = path_metrics.get("Avg path length (weighted LCC)")
+
+                # 3. Diameter (Try BOTH possible names)
+                # diam = path_metrics.get("Weighted diameter (distance-based)")
+                # if diam is None:
+                #     # Try the longer name you might have used
+                #     diam = path_metrics.get("Weighted diameter - longest shortest path (distance-based)")
+                
+                # history["diameter"][year] = diam
+
+            except Exception as e:
+                print(f"! Error on year {year}: {e}")
+
+        return history
+    
+    def plot_distribution_dynamics(data_by_year, metric_name="Degree"):
+        """
+        Plots distributions (Degree or Strength) for multiple years on a Log-Log plot.
+        Handles both Integers (Degree) and Floats (Strength).
+        """
+        plt.figure(figsize=(10, 7))
+        
+        years = sorted(data_by_year.keys())
+        colors = plt.cm.viridis(np.linspace(0, 1, len(years)))
+
+        for year, color in zip(years, colors):
+            values = data_by_year[year]
+            if not values: continue
+            
+            # Filter out zeroes (cannot log-plot 0)
+            values = [v for v in values if v > 0]
+            if not values: continue
+
+            # Dynamic Binning
+            min_val = min(values)
+            max_val = max(values)
+            
+            # Create log-spaced bins. 
+            # If min_val < 1 (e.g. Jaccard strength), this still works.
+            bins = np.logspace(np.log10(min_val), np.log10(max_val), num=30)
+            
+            # Compute histogram
+            hist, bin_edges = np.histogram(values, bins=bins, density=True)
+            
+            # Calculate centers
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+            
+            # Plot
+            plt.plot(bin_centers, hist, marker='o', linestyle='-', 
+                    label=f"{year}", color=color, alpha=0.7, markersize=4)
+
+        plt.xscale('log')
+        plt.yscale('log')
+        plt.xlabel(f'{metric_name} (k)', fontsize=12)
+        plt.ylabel('P(k) - Probability Density', fontsize=12)
+        plt.title(f'Evolution of {metric_name} Distribution (Log-Log)', fontsize=14)
+        plt.legend(title="Year")
+        plt.grid(True, which="both", ls="--", alpha=0.2)
+        
+        plt.show()
+
+    @staticmethod
+    def collect_degree_dynamics(graph_paths_by_year: dict, metric_type: str = "degree") -> dict:
+        """
+        Iterates through multiple graph files and collects degree (or strength) data.
+        (Progress bar removed)
+        """
+        # Import moved here to avoid circular dependency, but tqdm is removed
+        from graph_metrics import GraphMetricsIG 
+
+        collected_data = {}
+        sorted_years = sorted(graph_paths_by_year.keys())
+        
+        print(f"\n--- Collecting '{metric_type}' dynamics for {len(sorted_years)} years ---")
+
+        for i, year in enumerate(sorted_years, 1):
+            file_path = graph_paths_by_year[year]
+            
+            # Simple progress print
+            print(f"  > [{i}/{len(sorted_years)}] Processing year {year}...", flush=True)
+            
+            try:
+                g = GraphActionsIG.get_graph(file_path)
+                data = GraphMetricsIG.get_degree_data(g, metric_type=metric_type)
+                collected_data[year] = data
+            except Exception as e:
+                print(f"!! Error processing year {year}: {e}")
+                collected_data[year] = []
+
+        return collected_data
+    
+    @staticmethod
+    def plot_degree_counts(data_by_year: dict, metric_name: str, save_dir: str):
+        """
+        Plots the Exact Count of nodes for each degree (Scatter Plot).
+        X-Axis: Degree (k)
+        Y-Axis: Number of Nodes having that degree
+        """
+        import os
+        import matplotlib.pyplot as plt
+        import numpy as np
+        from collections import Counter
+        
+        # Ensure output directory exists
+        os.makedirs(save_dir, exist_ok=True)
+        
+        plt.figure(figsize=(12, 8))
+        
+        years = sorted(data_by_year.keys())
+        colors = plt.cm.turbo(np.linspace(0, 1, len(years)))
+        has_data = False
+        
+        for year, color in zip(years, colors):
+            values = data_by_year[year]
+            if not values: continue
+            
+            # Filter zeroes just in case
+            values = [v for v in values if v > 0]
+            if not values: continue
+            
+            has_data = True
+
+            # 1. Count exact frequency: {Degree: Count}
+            counts = Counter(values)
+            
+            # 2. Sort for plotting
+            sorted_degrees = sorted(counts.keys())
+            sorted_counts = [counts[k] for k in sorted_degrees]
+            
+            # 3. Plot as Scatter (dots) to show every single data point
+            plt.plot(sorted_degrees, sorted_counts, 
+                     marker='o', linestyle='None', 
+                     label=f"{year}", color=color, alpha=0.6, markersize=3)
+
+        if not has_data:
+            print(f"Skipping plot for {metric_name}: No valid data.")
+            plt.close()
+            return
+
+        # Log-Log scale is required to see the "Power Law" tail
+        plt.xscale('log')
+        plt.yscale('log')
+        
+        plt.xlabel(f'{metric_name} (k)', fontsize=12)
+        plt.ylabel('Number of Nodes', fontsize=12)
+        plt.title(f'{metric_name} Distribution', fontsize=14)
+        plt.legend(title="Year", markerscale=3)
+        plt.grid(True, which="both", ls="--", alpha=0.2)
+        
+        # Construct filename
+        safe_metric = metric_name.split(" ")[0].lower()
+        suffix = years[0] if len(years) == 1 else "evolution"
+        filename = f"distribution_counts_{safe_metric}_{suffix}.png"
+        save_path = os.path.join(save_dir, filename)
+        
+        plt.savefig(save_path, dpi=300)
+        print(f"Saved plot to: {save_path}")
+        plt.close()
+
+    @staticmethod
+    def generate_strength_distribution_plot(file_path: str, year: int, save_dir: str):
+        """
+        Loads a graph, calculates Weighted Degree (Strength), 
+        rounds values to the nearest integer, and plots the distribution.
+        """
+        # Import inside to avoid circular dependency
+        from project_cda.graph_metrics import GraphMetricsIG
+
+        print(f"\n--- Processing Strength Distribution for {year} ---")
+
+        # 1. Load the graph
+        g = GraphActionsIG.get_graph(file_path)
+
+        # 2. Calculate Strength (Sum of Weights) -> Returns Floats
+        raw_strength = GraphMetricsIG.get_degree_data(g, metric_type="strength")
+
+        # 3. Round to Integers
+        # We must round because strength is continuous (e.g. 12.4, 12.5).
+        # Rounding allows us to group similar users together for the frequency plot.
+        rounded_strength = [int(round(s)) for s in raw_strength]
+
+        # 4. Prepare dictionary for the plotter
+        data_map = {
+            year: rounded_strength
+        }
+
+        # 5. Call the existing plotter
+        GraphActionsIG.plot_degree_counts(data_map, "Node Strength Distribution", save_dir)
+
+    @staticmethod
+    def get_user_metrics_light(g, name):
+        """
+        Calculates ONLY lightweight metrics (safe for large graphs).
+        Skips: Betweenness, Closeness, Diameter, Path Lengths.
+        """
+        metrics = {}
+        
+        # 1. Basic Scale
+        metrics['Number of nodes'] = g.vcount()
+        metrics['Number of edges'] = g.ecount()
+        metrics['Graph Density'] = g.density()
+        
+        # 2. Degree Statistics (Popularity)
+        degrees = g.degree()
+        metrics['Average degree'] = np.mean(degrees)
+        metrics['Degree std'] = np.std(degrees)
+        
+        # 3. Components (Fragmentation)
+        components = g.clusters()
+        metrics['Connected components'] = len(components)
+        metrics['LCC size'] = components.giant().vcount()
+        
+        # 4. Clustering (Social Cohesion) - These are usually safe
+        # Global Transitivity (Ratio of triangles to triplets)
+        metrics['Transitivity'] = g.transitivity_undirected() 
+        # Avg Local Clustering (Avg probability that a user's friends are friends)
+        metrics['Clustering coefficient mean'] = g.transitivity_avglocal_undirected()
+        
+        # 5. K-Core (Core Social Groups) - Fast O(m)
+        core_nums = g.coreness()
+        metrics['Core number mean'] = np.mean(core_nums)
+        metrics['Max Core number'] = max(core_nums) if core_nums else 0
+        
+        # 6. Assortativity (Homophily)
+        metrics['Assortativity (degree)'] = g.assortativity_degree()
+        
+        return metrics
+    
+    @staticmethod
+    def print_user_graph_metrics(metrics, graph_name="User Graph"):
+        """
+        Prints a clean report with descriptions tailored to SOCIAL NETWORKS (Users).
+        """
+        row_config = [
+            ("Number of nodes", "Total Active Users", "Unique users in the network"),
+            ("Number of edges", "Total Interactions", "Votes for the same anime between users"),
+            ("Graph Density", "Network Density", "Saturation (How connected is the community?)"),
+            ("Average degree", "Avg Connections", "Avg number of friends per user"),
+            ("Degree std", "Connection Variance", "Inequality in popularity"),
+            ("Connected components", "Isolated Groups", "Fragmented sub-communities"),
+            ("LCC size", "LCC Size", "Users in the main 'giant' community"),
+            ("Transitivity", "Global Transitivity", "Probability of triangles (tight circles)"),
+            ("Clustering coefficient mean", "Avg Clustering Coeff", "Local social cohesion (cliques)"),
+            ("Core number mean", "Avg Core Depth", "Avg embedding in the social web"),
+            ("Max Core number", "Max Core Level", "Deepest/Most central social tier"),
+            ("Assortativity (degree)", "Homophily (Assortativity)", "Do popular users link to popular users?"),
+        ]
+
+        print(f"={' User Analysis: ' + graph_name + ' ':=^80}")
+        print(f"{'Metric':<35} | {'Value':<10} | {'Description'}")
+        print("-" * 80)
+
+        for key, label, desc in row_config:
+            val = metrics.get(key)
+            
+            if val is None: 
+                continue
+                
+            if isinstance(val, (float, np.floating)):
+                val_str = f"{val:.4f}"
+            else:
+                val_str = str(val)
+                
+            print(f"{label:<35} | {val_str:<10} | {desc}")
+        
+        print("=" * 80 + "\n")
+    
+######################################################################################################
+
+
+
+
+
+
+
+
+
+       
     @staticmethod
     def detect_community_leiden(
             graph=None,

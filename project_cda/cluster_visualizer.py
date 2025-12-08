@@ -1,10 +1,13 @@
 import pandas as pd
+import os
 import plotly.graph_objects as go
 import hashlib
 import ast
 import numpy as np
 import plotly.express as px
 from collections import Counter
+from project_cda.tag_formatter import log
+
 
 class ClusterVisualizer:
     def __init__(self, df_enriched: pd.DataFrame):
@@ -91,132 +94,6 @@ class ClusterVisualizer:
             if not valid_ages.empty:
                 avg_age = valid_ages.mean()
                 age_str = f"Avg Age: {avg_age:.1f} y.o.<br>"
-
-# ==========================================================================================================================
-
-        # # --- 3. ГЛАВНАЯ ФИЧА (FIXED) ---
-        # main_feature_str = "N/A"
-        
-        # for col in feature_cols:
-        #     if col not in group_df.columns: continue
-            
-        #     # Собираем все значения в плоский список
-        #     all_values = []
-            
-        #     # Предварительно обрабатываем столбец, чтобы распаковать строки-сеты
-        #     # Делаем это на копии серии, чтобы не ломать исходный DF
-        #     series_parsed = group_df[col].dropna().apply(self._safe_parse_iterable)
-            
-        #     if series_parsed.empty: continue
-            
-        #     # Проверяем первый элемент, чтобы понять стратегию
-        #     first_val = series_parsed.iloc[0]
-
-        #     # СТРАТЕГИЯ А: Это коллекция (set/list)?
-        #     if isinstance(first_val, (set, list, tuple)):
-        #         for val in series_parsed:
-        #             if val: all_values.extend(list(val))
-                
-        #         if all_values:
-        #             # Находим самый частый тег (например, 'Comedy')
-        #             top_val, _ = Counter(all_values).most_common(1)[0]
-                    
-        #             # Считаем покрытие: у скольких рядов этот тег есть внутри списка?
-        #             hits = series_parsed.apply(lambda x: top_val in x if isinstance(x, (set, list, tuple)) else False).sum()
-        #             perc = int((hits / size) * 100)
-        #             main_feature_str = f"{col}: {top_val} ({perc}%)"
-        #             break
-
-        #     # СТРАТЕГИЯ Б: Это атомарное значение?
-        #     else:
-        #         # Просто мода
-        #         valid_series = series_parsed.replace({'Unknown': np.nan, '': np.nan}).dropna()
-        #         if not valid_series.empty:
-        #             top_val = valid_series.mode()[0]
-        #             hits = (valid_series == top_val).sum()
-        #             perc = int((hits / size) * 100)
-        #             main_feature_str = f"{col}: {top_val} ({perc}%)"
-        #             break
-
-# ==========================================================================================================================
-
-        # # --- 3. ГЛАВНЫЕ ФИЧИ (Logic: Accumulate up to 80%) ---
-        # main_feature_str = "N/A"
-        
-        # for col in feature_cols:
-        #     if col not in group_df.columns: continue
-            
-        #     # Распаковка всех значений
-        #     all_values = []
-        #     series_parsed = group_df[col].dropna().apply(self._safe_parse_iterable)
-            
-        #     if series_parsed.empty: continue
-            
-        #     # Собираем общий мешок слов
-        #     for val in series_parsed:
-        #         if isinstance(val, (set, list, tuple)):
-        #             all_values.extend(list(val))
-        #         else:
-        #             all_values.append(val)
-            
-        #     if not all_values: continue
-
-        #     # Считаем частоты
-        #     total_items = len(series_parsed) # Знаменатель - кол-во узлов (аниме), а не всего тегов
-        #     counts = Counter(all_values)
-            
-        #     # Сортируем: от самых частых
-        #     sorted_counts = counts.most_common()
-            
-        #     accumulated_perc = 0
-        #     labels_to_show = []
-            
-        #     for tag, count in sorted_counts:
-        #         # Процент покрытия: у скольких аниме встречается этот тег
-        #         # (Для точного расчета нужно проходить по series_parsed, но для скорости берем упрощенно count/total_items, 
-        #         # если теги уникальны внутри аниме. Если один аниме имеет 2 'Action' (баг данных) - будет погрешность, но не страшно)
-                
-        #         # Более точный подсчет покрытия (сколько рядов содержит тег):
-        #         hits = series_parsed.apply(lambda x: tag in x if isinstance(x, (set, list, tuple)) else tag == x).sum()
-        #         perc = (hits / total_items) * 100
-                
-        #         labels_to_show.append(f"{tag} ({int(perc)}%)")
-        #         accumulated_perc += perc
-                
-        #         # Если набрали 80% "веса" (сумма процентов может быть > 100% для мульти-тегов, 
-        #         # но логика "показать самые жирные" сохраняется). 
-        #         # Давай ограничимся топ-3 или пока не наберем покрытие.
-        #         if accumulated_perc >= 80 or len(labels_to_show) >= 4:
-        #             break
-            
-        #     main_feature_str = f"<b>{col}:</b> " + ", ".join(labels_to_show)
-        #     break # Берем первую найденную колонку из feature_cols
-
-        # # --- 4. ТОП СПИСОК ---
-        # if sort_col and sort_col in group_df.columns:
-        #     sorted_df = group_df.sort_values(sort_col, ascending=False)
-        # else:
-        #     sorted_df = group_df
-            
-        # if name_col in sorted_df.columns:
-        #     top_items = sorted_df[name_col].head(5).tolist()
-        #     top_items_str = "<br>• ".join([str(x) for x in top_items])
-        # else:
-        #     top_items_str = "N/A"
-
-        # # СБОРКА HTML
-        # tooltip = (
-        #     f"<b>{year} | Cluster {c_id}</b><br>"
-        #     f"Size: {size}<br>"
-        #     f"{avg_val_str}"
-        #     f"{age_str}"
-        #     f"Main: {main_feature_str}<br>"
-        #     f"<hr>"
-        #     f"<b>Top {name_col}:</b><br>• {top_items_str}"
-        # )
-        # return tooltip
-
-# ==========================================================================================================================
 
         # --- 3. ГЛАВНЫЕ ФИЧИ (Top-5 с процентами) ---
         main_feature_str = "N/A"
@@ -314,8 +191,8 @@ class ClusterVisualizer:
             min_link_size (int): Минимальная толщина связи для отображения.
             title (str): Заголовок графика.
         """
-        
-        print(f"Generating Sankey diagram ({title})...")
+
+        log(f"Generating Sankey diagram ({title})...", tag="PLOT", level="DEBUG")
         node_map = {}
         node_labels, node_colors, custom_data = [], [], []
         counter = 0
@@ -360,7 +237,15 @@ class ClusterVisualizer:
                     sources.append(src_idx)
                     targets.append(tgt_idx)
                     values.append(count)
-                    link_colors.append("rgba(180, 180, 180, 0.3)") 
+                    # Получаем цвет узла-источника (Hex)
+                    src_hex = node_colors[src_idx] 
+                    # Превращаем Hex в RGB
+                    r = int(src_hex[1:3], 16)
+                    g = int(src_hex[3:5], 16)
+                    b = int(src_hex[5:7], 16)
+                    # Добавляем прозрачность (0.4 выглядит приятно)
+                    link_colors.append(f"rgba({r}, {g}, {b}, 0.4)")
+                    # link_colors.append("rgba(180, 180, 180, 0.3)") 
                 except KeyError: continue
 
         # --- PLOT ---
@@ -373,19 +258,19 @@ class ClusterVisualizer:
             link = dict(source=sources, target=targets, value=values, color=link_colors)
         )])
         fig.update_layout(title_text=title, font_size=12, height=800)
-        
-        import os
+
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         fig.write_html(filename)
-        print(f"Plot saved to {filename}")
+        log(f"Plot saved to {filename}", tag="PLOT", level="INFO")
+
 
 # --- 2. STREAMGRAPH (Stacked Area) ---
     def plot_streamgraph(self, filename, feature_col, title="Streamgraph: Cluster Sizes"):
         """
         Строит график изменения размеров кластеров.
-        Легенда подписывается как 'Cluster X (MainFeature)'.
+        Легенда иерархическая: Группировка по Жанру -> Список Кластеров.
         """
-        print(f"Generating Streamgraph ({title})...")
+        log(f"Generating Streamgraph ({title})...", tag="PLOT", level="DEBUG")
         
         # 1. Агрегация данных
         stats = []
@@ -395,105 +280,54 @@ class ClusterVisualizer:
                 c_df = df_year[df_year['cluster_id'] == c_id]
                 size = len(c_df)
                 
-                # Ищем главное свойство для легенды
-                feat_val, _ = self._get_top_feature(c_df[feature_col], is_iterable=True) # Пытаемся как iterable, safety check внутри есть
+                # Ищем главное свойство
+                feat_val, _ = self._get_top_feature(c_df[feature_col], is_iterable=True)
                 if feat_val == "N/A": 
-                    # Если не вышло как iterable (жанры), пробуем как строку (страна)
                     feat_val, _ = self._get_top_feature(c_df[feature_col], is_iterable=False)
 
-                label = f"Cl {int(c_id)}: {feat_val}"
-                stats.append({'year': year, 'count': size, 'label': label, 'cluster_id': c_id})
+                # ХИТРОСТЬ 1: Создаем комбинированный ключ для цвета.
+                # Используем редкий разделитель '§§', чтобы потом легко разрезать.
+                # Формат: "ЖАНР §§ КЛАСТЕР"
+                combined_label = f"{feat_val}§§Cluster {int(c_id)}"
+                
+                stats.append({
+                    'year': year, 
+                    'count': size, 
+                    'combined_label': combined_label, # Это пойдет в color
+                    'cluster_id': c_id,
+                    'feature': feat_val # Для сортировки
+                })
         
         df_stats = pd.DataFrame(stats)
+        
+        # ХИТРОСТЬ 2: Сортируем данные. 
+        # Это критично для Streamgraph, чтобы слои одного жанра лежали рядом.
+        df_stats = df_stats.sort_values(by=['feature', 'cluster_id', 'year'])
         
         # 2. Plot
         fig = px.area(
             df_stats, 
             x="year", y="count", 
-            color="label", 
-            line_group="cluster_id",
+            color="combined_label",  # Красим по уникальной связке (Жанр+Кластер)
+            line_group="cluster_id", # Чтобы линии не прерывались логически
             title=title,
             labels={"count": "Size (Nodes)"}
         )
         
-        import os
+        # ХИТРОСТЬ 3: Переделываем легенду в иерархическую
+        # Проходим по всем созданным трейсам и обновляем их свойства
+        fig.for_each_trace(lambda trace: trace.update(
+            name=trace.name.split('§§')[1],            # Имя в легенде: "Cluster 1"
+            legendgroup=trace.name.split('§§')[0],     # Группа логическая: "Action"
+            legendgrouptitle_text=trace.name.split('§§')[0] # Заголовок группы: "Action"
+        ) if '§§' in trace.name else None)
+
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         fig.write_html(filename)
-        print(f"Saved: {filename}")
+        log(f"Plot saved to {filename}", tag="PLOT", level="INFO")
 
-    # --- 3. RADAR CHART (Spider) ---
-    def plot_radar(self, filename, year, target_clusters, feature_col, title="Cluster DNA Comparison"):
-        """
-        Сравнивает ТОП-5 фичей (жанров/стран) для выбранных кластеров в виде паутины.
-        Args:
-            year: Год для анализа.
-            target_clusters: Список ID кластеров [0, 5, 2].
-            feature_col: Колонка для осей (genres/country).
-        """
-        print(f"Generating Radar Chart ({title})...")
-        df_year = self.df[self.df['year'] == year]
-        
-        # 1. Собираем Топ фичи для осей (Union всех топов целевых кластеров)
-        axis_candidates = Counter()
-        cluster_data = {} # {c_id: {feat: count}}
-        
-        for c_id in target_clusters:
-            c_df = df_year[df_year['cluster_id'] == c_id]
-            if c_df.empty: continue
-            
-            # Собираем все теги кластера
-            all_tags = []
-            for val in c_df[feature_col].dropna():
-                parsed = self._safe_parse_iterable(val)
-                if isinstance(parsed, (set, list, tuple)): all_tags.extend(list(parsed))
-                else: all_tags.append(parsed)
-            
-            # Считаем частоты
-            counts = Counter(all_tags)
-            total = len(c_df)
-            
-            # Нормализуем (процент)
-            norm_counts = {k: v/total for k, v in counts.items()}
-            cluster_data[c_id] = norm_counts
-            
-            # Добавляем топ-5 этого кластера в кандидаты на оси
-            for k, _ in counts.most_common(5):
-                axis_candidates[k] += 1
-                
-        # Оси радара = Топ-10 самых популярных фичей среди выбранных кластеров
-        categories = [k for k, _ in axis_candidates.most_common(10)]
-        
-        # 2. Plot
-        fig = go.Figure()
-        
-        for c_id in target_clusters:
-            if c_id not in cluster_data: continue
-            
-            # Собираем значения для осей
-            values = [cluster_data[c_id].get(cat, 0) for cat in categories]
-            # Замыкаем круг
-            values += [values[0]]
-            categories_closed = categories + [categories[0]]
-            
-            fig.add_trace(go.Scatterpolar(
-                r=values,
-                theta=categories_closed,
-                fill='toself',
-                name=f"Cluster {c_id}"
-            ))
 
-        fig.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
-            title=f"{title} ({year})",
-            showlegend=True
-        )
-        
-        import os
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        fig.write_html(filename)
-        print(f"Saved: {filename}")
-
-    # --- 4. ANIMATED BUBBLE CHART ---
+    # --- 3. ANIMATED BUBBLE CHART ---
     def plot_bubbles(self, filename, x_col, y_col, size_col='count', title="Dynamic Landscape"):
         """
         Анимированный Scatter plot.
@@ -502,7 +336,7 @@ class ClusterVisualizer:
             y_col: Колонка для оси Y (среднее по кластеру).
             size_col: 'count' (размер кластера) или имя колонки для усреднения.
         """
-        print(f"Generating Bubble Chart ({title})...")
+        log(f"Generating Bubble Chart ({title})...", tag="PLOT", level="DEBUG")
         
         # Агрегация
         agg_rules = {
@@ -538,18 +372,18 @@ class ClusterVisualizer:
             range_y=[df_grouped[y_col].min()*0.9, df_grouped[y_col].max()*1.1],
             title=title
         )
-        
-        import os
+
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         fig.write_html(filename)
-        print(f"Saved: {filename}")
+        log(f"Plot saved to {filename}", tag="PLOT", level="INFO")
 
-    # --- 5. SUNBURST ---
+
+    # --- 4. SUNBURST ---
     def plot_sunburst(self, filename, feature_col, size_col='count', title="Hierarchy"):
         """
         Иерархия: Год -> Кластер -> Главная Фича.
         """
-        print(f"Generating Sunburst ({title})...")
+        log(f"Generating Sunburst ({title})...", tag="PLOT", level="DEBUG")
         
         # Подготовка данных: нам нужно распаковать (explode) фичи, 
         # но чтобы не перегрузить график, берем только TOP-1 фичу для каждого узла.
@@ -577,8 +411,7 @@ class ClusterVisualizer:
             title=title,
             height=800
         )
-        
-        import os
+
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         fig.write_html(filename)
-        print(f"Saved: {filename}")
+        log(f"Plot saved to {filename}", tag="PLOT", level="INFO")
