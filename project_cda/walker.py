@@ -80,6 +80,7 @@ class Walker:
         log(f"{self.username} Cheating factor calculated", tag="WALKER", level='DEBUG')
 
         self.year_steps = [timestamp.year for _, timestamp in self.trail]
+        self.year_steps = [year for year in self.year_steps if 2005 < year < 2019]
         self.year_set = set(self.year_steps)
         self.nodes_sequence = [anime_id for anime_id, _ in self.trail]
 
@@ -132,165 +133,130 @@ class RandomWalker:
         self.parent_walker = parent_walker
         RandomWalker._counter += 1
         self.id = f"{self.parent_walker}_{RandomWalker._counter:03d}"
-        self.current_node = current_node # Это реальный ID (например, anime_id)
+        
+        self.current_node = current_node # Это реальный ID
         self.settings = settings
-        self.path: List[Node] = []
-        self.visited: Set[Node] = {current_node}
+        
+        # Исправил type hint: там могут быть и int, и str
+        self.path: List[Node] = [] 
+        
+        self.visited_real_ids: Set[Node] = {current_node}
         self.stopped = False
         
         if settings.seed is not None:
-            self.rng = np.random.seed(settings.seed + RandomWalker._counter)
+            self.rng = np.random.default_rng(settings.seed + RandomWalker._counter)
         else:
             self.rng = np.random.default_rng()
             
         log(f"{self.id} Random Walker initialized.", tag="RW_INIT", level='DEBUG')
 
-    def _get_vertex_index(self, graph: ig.Graph, node_name: Node) -> int | None:
-        """Безопасное получение индекса узла в igraph по имени."""
-        try:
-            # graph.vs.find ищет по атрибуту name (мы задали его как str(anime_id))
-            return graph.vs.find(name=str(node_name)).index
-        except ValueError:
+    def _respawn(self, graph: ig.Graph):
+        """
+        JUMP: Возвращает Internal Index случайного узла.
+        Выбор случайного ребра эквивалентен выбору узла пропорционально его степени.
+        """
+        log(f"{self.id} stuck. Respawn.", tag="TELEPORT", level='DEBUG')
+        rand_edge = graph.es[self.rng.integers(0, graph.ecount())]
+        return rand_edge.source if self.rng.random() < 0.5 else rand_edge.target
+
+    def walk_through_year(self, 
+                          graph: ig.Graph, 
+                          n_steps: int, 
+                          real_to_idx: Dict[Node, int], 
+                          idx_to_real: Dict[int, Node]):
+        """
+        Основной цикл прогулки.
+        """
+        if self.stopped:
+            return
+
+        current_idx = real_to_idx.get(self.current_node)
+        
+        # Если узла нет в графе этого года — респаун
+        if current_idx is None:
+            current_idx = self._respawn(graph)
+            self.current_node = idx_to_real[current_idx]
+
+        # HOT LOOP
+        for _ in range(n_steps):
+            edge_ids = graph.incident(current_idx, mode="ALL")
+            
+            if not edge_ids:
+                current_idx = self._respawn(graph)
+            else:
+                next_idx = self._choose_next(graph, current_idx, edge_ids, idx_to_real)
+
+                if next_idx is None:
+                    current_idx = self._respawn(graph)
+                else:
+                    current_idx = next_idx
+
+            # Сохраняем шаг (Real ID)
+            real_node = idx_to_real[current_idx]
+            
+            self.path.append(real_node) 
+            self.visited_real_ids.add(real_node)
+            self.current_node = real_node # Обновляем состояние для следующей итерации/года
+
+    def _choose_next(self, 
+                     graph: ig.Graph, 
+                     curr_idx: int, 
+                     edge_ids: List[int],
+                     idx_to_real: Dict[int, Node]) -> int | None:
+        
+        edges = graph.es[edge_ids]
+        
+        # Проверка наличия весов (на всякий случай)
+        if "weight" in graph.es.attribute_names():
+            weights = edges["weight"]
+        else:
+            weights = [1.0] * len(edges)
+        
+        neighbors = []
+        for e in edges:
+            neighbors.append(e.target if e.source == curr_idx else e.source)
+        
+        # --- GREEDY ---
+        if self.settings.strategy == 'greedy':
+            nw = sorted(zip(neighbors, weights), key=lambda x: x[1], reverse=True)
+            
+            if self.settings.top_k:
+                nw = nw[:self.settings.top_k]
+                
+            for n_idx, _ in nw:
+                if idx_to_real[n_idx] not in self.visited_real_ids:
+                    return n_idx
             return None
 
-    def _respawn(self, graph: ig.Graph):
-        """JUMP: Если узел исчез."""
-        new_node = self._get_random_node(graph)
-        log(f"{self.id} node {self.current_node} vanished. Respawning at {new_node}", tag="JUMP", level='DEBUG')
-        self.current_node = new_node
-        self.visited.add(new_node)
-
-    def walk_through_year(self, year: int, graph: ig.Graph, n_steps: int):
-        # 1. Проверяем, существует ли текущий узел в этом году
-        # В igraph имена хранятся строками, поэтому str()
-        curr_idx = self._get_vertex_index(graph, self.current_node)
-        
-        if curr_idx is None:
-            self._respawn(graph)
-            # После респавна нужно обновить индекс
-            curr_idx = self._get_vertex_index(graph, self.current_node)
-
-        # 2. WALKING
-        for _ in range(n_steps):
-            if self.stopped:
-                break
+        # --- PROBABILISTIC ---
+        elif self.settings.strategy == 'probabilistic':
+            w_arr = np.array(weights, dtype=float)
+            n_arr = np.array(neighbors, dtype=int)
             
-            # Передаем индекс, чтобы не искать его каждый раз
-            next_node = self._choose_next(graph, curr_idx)
+            valid_mask = [idx_to_real[n] not in self.visited_real_ids for n in n_arr]
             
-            if next_node is None:
-                self.stopped = True
-                break
-            
-            self.path.append(next_node)
-            self.visited.add(next_node)
-            self.current_node = next_node
-            
-            # Обновляем индекс для следующего шага
-            curr_idx = self._get_vertex_index(graph, next_node)
-
-    def _neighbors_sorted_by_weight(self, graph: ig.Graph, node_idx: int) -> List[Tuple[Node, float]]:
-        """
-        Возвращает (neighbor_real_id, weight).
-        Работает через внутренние индексы igraph для скорости.
-        """
-        # Получаем ID инцидентных ребер
-        edge_ids = graph.incident(node_idx, mode="ALL")
-        if not edge_ids:
-            return []
-            
-        # Получаем веса и соседей пачкой (векторизация)
-        edges = graph.es[edge_ids]
-        weights = edges["weight"] if "weight" in edges.attributes() else [1.0] * len(edges)
-        
-        # Получаем индексы соседей. 
-        # graph.es[i].source / .target могут вернуть нас самих, нужно выбрать другого
-        neighbor_indices = []
-        for e in edges:
-            if e.source == node_idx:
-                neighbor_indices.append(e.target)
-            else:
-                neighbor_indices.append(e.source)
-
-        # Превращаем индексы обратно в Real Names (anime_id)
-        # graph.vs[indices]["name"] вернет список имен
-        neighbor_names = graph.vs[neighbor_indices]["name"]
-        
-        # Преобразуем имена обратно в int, если исходные ID были int
-        # (AnimeGraphBuilder сохраняет name как str)
-        try:
-            neighbor_names = [int(n) for n in neighbor_names]
-        except ValueError:
-            pass # Если это были логины юзеров, оставляем str
-
-        res = list(zip(neighbor_names, weights))
-        
-        # Сортировка по весу (desc)
-        res.sort(key=lambda x: x[1], reverse=True)
-
-        if self.settings.top_k:
-            return res[:self.settings.top_k]
-        return res
-    
-    def _choose_next(self, graph: ig.Graph, curr_node_idx: int) -> Node | None:
-        if self.settings.strategy == "greedy":
-            # Передаем индекс, чтобы методы работали быстрее
-            neighbors = self._neighbors_sorted_by_weight(graph, curr_node_idx)
-            for nbr, _ in neighbors:
-                if nbr not in self.visited:
-                    return nbr
-            nxt = None
-            
-        elif self.settings.strategy == "probabilistic":
-            neighbors = self._neighbors_sorted_by_weight(graph, curr_node_idx)
-            if not neighbors:
-                nxt = None
-            else:
-                nodes = [n for n, _ in neighbors]
-                weights = np.array([w for _, w in neighbors], dtype=float)
+            if not any(valid_mask):
+                return None
                 
-                # Степенной распад вероятности
-                weights = np.power(weights, self.settings.prob_decay)
-                probs = weights / weights.sum()
-                
-                # Фильтр посещенных
-                candidates = [(n, p) for n, p in zip(nodes, probs) if n not in self.visited]
-                
-                if not candidates:
-                    nxt = None
-                else:
-                    nodes_c, probs_c = zip(*candidates)
-                    probs_c = np.array(probs_c)
-                    probs_c = probs_c / probs_c.sum() # Нормировка
-                    nxt = self.rng.choice(nodes_c, p=probs_c)
-        else:
-            raise ValueError("Unknown strategy")
-
-        if nxt is None:
-            nxt = self._teleport(graph)
+            n_arr = n_arr[valid_mask]
+            w_arr = w_arr[valid_mask]
             
-        return nxt
+            if self.settings.top_k and len(w_arr) > self.settings.top_k:
+                top_indices = np.argpartition(w_arr, -self.settings.top_k)[-self.settings.top_k:]
+                n_arr = n_arr[top_indices]
+                w_arr = w_arr[top_indices]
 
-    def _teleport(self, graph: ig.Graph) -> Node:
-        new_node = self._get_random_node(graph)
-        log(f"{self.id} stuck. Teleporting to {new_node}", tag="TELEPORT", level='DEBUG')
-        return new_node
+            if self.settings.prob_decay != 1.0:
+                w_arr = np.power(w_arr, self.settings.prob_decay)
+            
+            w_sum = w_arr.sum()
+            if w_sum == 0:
+                return self.rng.choice(n_arr)
+                
+            probs = w_arr / w_sum
+            return self.rng.choice(n_arr, p=probs)
 
-    def _get_random_node(self, graph: ig.Graph) -> Node:
-        """Выбор случайного узла пропорционально степени (igraph version)."""
-        # degree() в igraph возвращает список степеней для узлов 0..N
-        degrees = np.array(graph.degree(), dtype=float)
-        probs = degrees / degrees.sum()
-        
-        # Выбираем ИНДЕКС
-        random_idx = self.rng.choice(len(degrees), p=probs)
-        
-        # Возвращаем ИМЯ (Real ID)
-        val = graph.vs[random_idx]["name"]
-        try:
-            return int(val)
-        except ValueError:
-            return val
+        return None
 
 
 class Measure:
@@ -334,6 +300,74 @@ class Measure:
             s += 1.0 / (1.0 + (d / scale))
         # нормировка: делим на длину user trail, чтобы результат в [0,1] примерно
         return s / float(len(user_nodes))
+    
+    @staticmethod
+    def stability_test(users_sample, settings, loader, n_walkers=10):
+        """
+        Запускает симуляцию дважды и сравнивает результаты (Mean Similarity).
+        users_sample: список объектов Walker (лучше взять 20-30 штук)
+        """
+        print(f"Stability Test (Run 1 vs Run 2): {len(users_sample)} users, walkers per user: {n_walkers})...")
+
+        # --- ПРОГОН 1 ---
+        print("Run 1/2...")
+        # Важно: создаем новые инстансы RandomCrowd, чтобы не смешивать состояния
+        crowd_1 = RandomCrowd(users=users_sample, n_walkers_per_user=n_walkers, settings=settings)
+        # Ручной инжект лоадера, чтобы не создавать заново
+        crowd_1.loader = loader 
+        
+        crowd_1.run()
+        crowd_1.evaluate(metric="weighted")
+        res_1 = {u: data['similarity_mean'] for u, data in crowd_1.metrics.items()}
+        
+        # Чистим память, хотя на 20 юзерах это не критично
+        # del crowd_1
+        
+        # --- ПРОГОН 2 ---
+        print("Run 2/2...")
+        crowd_2 = RandomCrowd(users=users_sample, n_walkers_per_user=n_walkers, settings=settings)
+        crowd_2.loader = loader
+        
+        crowd_2.run()
+        crowd_2.evaluate(metric="weighted")
+        res_2 = {u: data['similarity_mean'] for u, data in crowd_2.metrics.items()}
+        # del crowd_2
+
+        # --- СРАВНЕНИЕ ---
+        diffs = []
+        print("\nResults (Mean Similarity Run1 vs Run2):")
+        print(f"{'User':<15} | {'Run 1':<10} | {'Run 2':<10} | {'Diff':<10}")
+        print("-" * 55)
+        
+        for u_obj in users_sample:
+            u = u_obj.username
+            val1 = res_1.get(u, 0.0)
+            val2 = res_2.get(u, 0.0)
+            diff = abs(val1 - val2)
+            diffs.append(diff)
+            
+            # Выводим первые 10 для примера
+            if len(diffs) <= 10:
+                print(f"{u[:15]:<15} | {val1:.4f}     | {val2:.4f}     | {diff:.4f}")
+
+        avg_diff = np.mean(diffs)
+        # Корреляция Пирсона (насколько линейно связаны результаты)
+        v1 = list(res_1.values())
+        v2 = list(res_2.values())
+        correlation = np.corrcoef(v1, v2)[0, 1] if len(v1) > 1 else 0.0
+
+        print("-" * 55)
+        print(f"Среднее отклонение (MAE): {avg_diff:.5f}")
+        print(f"Корреляция между запусками: {correlation:.4f}")
+        
+        if correlation > 0.9 and avg_diff < 0.01:
+            print("[HIGH] High stability")
+        elif correlation > 0.7:
+            print("[AVERAGE] Acceptable stability.")
+        else:
+            print("[LOW] Low stability. Need more random walkers.")
+
+        return crowd_1, crowd_2
 
 
 class RandomCrowd:
@@ -365,16 +399,45 @@ class RandomCrowd:
             if graph is None:
                 continue
 
+            log(f"Building name/idx mapping for year {year}...", tag="CROWD", level='DEBUG')
+
+            vs_names = graph.vs["name"] 
+            
+            # Пробуем сконвертировать в int, если имена - это ID аниме
+            try:
+                # Если имена хранятся как строки '123', '455', конвертируем в int
+                real_ids = [int(x) for x in vs_names]
+            except ValueError:
+                # Если там смешанные данные или логины, оставляем как есть
+                real_ids = vs_names
+
+            # 1. Lookup: RealID -> InternalIndex
+            real_to_idx = {rid: i for i, rid in enumerate(real_ids)}
+            
+            # 2. Lookup: InternalIndex -> RealID (просто список)
+            idx_to_real = real_ids # Список индексируется напрямую int-ом, это быстрее dict
+            log(f"Name/idx mapping for year {year} builded", tag="CROWD", level='DEBUG')            
+            # --- END PRE-CALC ---
+
+            active_count = 0
             for u in self.users:
                 n_steps = u.steps_in_year(year)
                 if n_steps == 0:
                     continue
-
+                
+                active_count += 1
                 for rw in self.walkers[u]:
-                    rw.walk_through_year(year, graph, n_steps)
+                    rw.walk_through_year(
+                        graph, 
+                        n_steps, 
+                        real_to_idx=real_to_idx, 
+                        idx_to_real=idx_to_real
+                    )
 
-            log(f"Year {year} finished.", tag="CROWD", level='INFO')
+            log(f"Year {year} finished. Active users: {active_count}", tag="CROWD", level='INFO')
             del graph
+            del real_to_idx
+            del idx_to_real
             gc.collect()
             log(f"Memory cleared for year {year}", tag="CROWD", level='DEBUG')
 
@@ -420,9 +483,10 @@ class RandomCrowd:
             std = float(arr.std()) if arr.size else 0.0
 
             self.metrics[u.username] = {
-                "mean": mean,
-                "std": std,
-                "raw": vals,
+                "length_of_history": u.length,
+                "similarity_mean": mean,
+                "similarity_std": std,
+                "similarity_values": vals,
                 "cheating_factor": float(u.cheating_factor)
             }
 

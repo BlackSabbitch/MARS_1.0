@@ -1,0 +1,63 @@
+% !TeX root = main.tex
+
+\section{Data and Methodology}
+
+\subsection{Dataset Acquisition and Preprocessing}
+
+The data originates from a publicly available kaggle datasets aggregated from MAL profiles \cite{hernan4444, azathoth42},
+covering the period from 2006 to 2018. Given the platform's predominantly international user base, the dataset reflects global
+consumption patterns rather than domestic Japanese trends.
+
+To ensure data quality, we applied a multi-stage filtering pipeline:
+\begin{itemize}
+    \item \textbf{Bot Detection:} Removal of inactive accounts and profiles exhibiting automated behavior.
+    \item \textbf{Percentile-based Truncation:} We excluded users falling into the extreme tails of the activity distribution.
+    This removes users with too few votes (insufficient signal for clustering) and those with implausibly high vote counts,
+    ensuring the analysis focuses on human-scale consumption patterns.
+\end{itemize}
+
+The final processed dataset comprises approximately \textbf{85,000 unique users} and \textbf{6,500 anime titles}.
+
+\subsection{Graph Projection and Topology Construction}
+We model the system as a bipartite graph which is subsequently projected into two distinct monopartite networks. The detailed
+construction pipelines are described in Sections \ref{sec:pipeline_anime} and \ref{sec:pipeline_users}, respectively.
+
+\subsubsection{Anime-Anime Network}
+In this projection, an edge exists if two titles share a common voter. To account for varying audience sizes, we utilized the
+\textbf{Jaccard Similarity} index as the edge weight. 
+$$ J(A,B) = \frac{|U_A \cap U_B|}{|U_A \cup U_B|} $$
+Given the extreme density of the raw projection (where a single popular anime could fully connect thousands of users),
+we applied a hard threshold of $J > 0.05$. This effectively prunes weak links formed by random coincidences while preserving
+significant genre or fandom connections.
+
+\subsubsection{User-User Network}
+Here, an edge connects two users if they have rated the same anime. The edge weight is defined as the raw count of shared titles
+(co-votes). A major challenge in this projection is the variance in edge weights, which range from negligible values (2-3 shared
+items) to tens of thousands ($10^4$). To address this, we implemented a cutoff threshold: edges were retained only if users shared
+more than \textbf{3 titles}.
+
+Anyway, even after thresholding, the user-user raw network projection suffered from extreme density saturation. Popular
+"blockbuster" titles (e.g., \textit{Death Note}, \textit{Attack On Titan}) act as super-hubs; a single vote for such a title
+effectively connects a user to thousands of others, creating a near-clique structure that obscures genuine taste communities. So,
+this titles had to be deleted from the dataset prior to projection.
+
+\subsubsection{Further Sparsification Attempts}
+More aggressive sparsification techniques (e.g., Backbone extraction, k-NN) were tested but did not reveal significantly distinct
+structural patterns. Consequently, we retained the simpler approach to avoid unnecessary information loss while maintaining
+structural clarity.
+
+\subsection{Resulting Topology}
+These thresholding strategies proved effective in mitigating the "hairball" phenomenon common in social graphs. The resulting networks
+exhibited a graph density in the range of $0.2 - 0.3$, striking a balance between sparsity (for efficient clustering) and connectivity
+(preserving the Giant Connected Component).
+
+\subsection{Sparsification and Topology Correction}
+
+To extract the meaningful "backbone" of the network, we applied a multi-stage sparsification pipeline:
+\begin{enumerate}
+    \item \textbf{k-Nearest Neighbors (k-NN):} Restricting node connections to their $k$ strongest peers to preserve local structure.
+    \item \textbf{Disparity Filter (Backbone):} Extracting statistically significant edges to retain multiscale structure while discarding
+    random noise.
+\end{enumerate}
+
+Only after these topological corrections is the graph subjected to the Leiden community detection algorithm and Random Walk simulations.

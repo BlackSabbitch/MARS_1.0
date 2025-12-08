@@ -1,0 +1,185 @@
+% !TeX root = main.tex
+
+\section{Topological Evolution of Projected Networks}
+
+In this section, we analyze the structural evolution of the projections derived from the bipartite graph. We first examine the Anime-Anime
+network to understand how content relationships shifted over time, followed by an analysis of the User-User network.
+
+% --- ПОДРАЗДЕЛ 3.1: АНИМЕ ---
+\subsection{Anime-Anime Network}
+\label{sec:anime_topology}
+
+The projected anime-anime network experienced explosive growth over the analyzed period (2006–2018), transforming from a compact,
+niche community into a sprawling, heterogeneous ecosystem. This transformation is defined by three primary phenomena: the
+densification-sparsification paradox, increasing taste divergence, and the crystallization of a "rich-club" core.
+
+\subsubsection{The Densification-Sparsification Paradox}
+The network underwent a dramatic scale expansion: the number of nodes (anime titles) increased from 732 in 2006 to 6,129 in 2018,
+while the volume of connections (edges) surged from $\sim$64,000 to $\sim$819,000. However, this volumetric growth reveals a fundamental
+structural shift.
+
+While the absolute number of connections increased by an order of magnitude, the potential number of connections grew quadratically ($N^2$).
+Consequently, the global Graph Density declined precipitously from 0.2387 (2006) to 0.0436 (2018).
+
+This indicates a transition from a "Village" topology—where the community is small enough for high interconnectedness—to a "Metropolis"
+structure. In the modern era, the ecosystem has become highly specialized; while the total volume of interactions is higher, individual
+anime titles connect to a significantly smaller fraction of the total population. The network has shifted from a monolithic block to a
+spread-out, sparse landscape.
+
+\subsubsection{Increasing Social Distance and Taste Divergence}
+To quantify the "cost" of traversing this expanding network, we analyzed weighted path metrics. Since edge weights represent similarity
+(Jaccard), the weighted distance can be interpreted as "social distance" or taste divergence.
+
+The evolution of these metrics is presented in \textbf{Figure \ref{fig:anime_metrics}}. As shown in the \textit{upper-left panel},
+the average weighted path length rose sharply from 7.1 in 2006 to 44.4 in 2018. This metric represents the "resistance" to navigation:
+connecting a fan of a niche genre to a mainstream hit now requires passing through significantly more intermediaries.
+
+Simultaneously, the network diameter (\textit{upper-right panel}) expanded from 29 to 188.5 weighted units. This confirms that the
+"taste universe" is expanding. Distinct clusters (e.g., modern idols vs. vintage mecha) are moving mathematically further apart,
+creating deep topological fissures.
+
+% --- ОБЪЕДИНЕННАЯ КАРТИНКА (2x2) ---
+\begin{figure*}[t]
+    \centering
+    % Первая строка: Path Length и Diameter
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/anime_path_length_evolution.png}
+        %\caption{Avg. Weighted Path Length} % Можно убрать подпись, если всё в главной
+        \label{fig:path_length}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/anime_diameter_evolution.png}
+        %\caption{Network Diameter}
+        \label{fig:diameter}
+    \end{subfigure}
+    
+    \vspace{0.5cm} % Отступ между рядами
+    
+    % Вторая строка: Clustering и Node Strength
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/anime_clustering_coefficient.png}
+        %\caption{Avg. Clustering Coefficient}
+        \label{fig:clustering}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/anime_node_strength_2018.png}
+        %\caption{Node Strength (2018)}
+        \label{fig:node_strength}
+    \end{subfigure}
+    
+    \caption{Evolution of Anime Network Topology (2006–2018). 
+    \textbf{Upper-left:} Average Weighted Path Length showing increased navigation difficulty. 
+    \textbf{Upper-right:} Network Diameter indicating the expansion of the "taste universe". 
+    \textbf{Bottom-left:} Average Clustering Coefficient stabilizing around 0.59, suggesting persistent local cohesion. 
+    \textbf{Bottom-right:} Node Strength Distribution (2018) confirming the scale-free ($P(k) \sim k^{-\gamma}$) nature of the modern network.}
+    \label{fig:anime_metrics}
+\end{figure*}
+
+\subsubsection{Local Cohesion and the "Fandom" Effect}
+Despite the global sparsification, the network maintains robust local connectivity. The \textit{bottom-left panel} of
+\textbf{Figure \ref{fig:anime_metrics}} illustrates the Average Clustering Coefficient. After an initial adjustment, the metric
+stabilized at a remarkably high value of $\approx$0.59. This indicates that the "Small-World" property is preserved locally.
+If Anime A is connected to B and C, there is a consistent $\sim$60\% probability that B and C are also connected. This proves that
+the sparsification did not destroy community cohesion; instead, the landscape fractured into tight, self-reinforcing "genre bubbles" (fandoms).
+
+\subsubsection{Structural Phase Shift: The 2006 Anomaly}
+The year 2006 represents a distinct topological phase. In this nascent period, the network exhibited disassortative mixing
+(Degree Assortativity $\approx -0.11$), suggesting a star-like structure where popular titles served as hubs connecting primarily to
+niche nodes. From 2007 onward, the network flipped to positive assortativity ($\approx 0.50$), signaling the emergence of the
+"Rich-Club" phenomenon.
+
+\subsubsection{Intensity vs. Topology}
+Finally, we examine the distribution of influence using Node Strength. The log-log plot in the \textit{bottom-right panel} of
+\textbf{Figure \ref{fig:anime_metrics}} confirms the scale-free nature of the modern network, following a clear Power Law distribution.
+The network is dominated by a few "mega-hubs," validating the "preferential attachment" growth model.
+
+However, the Assortativity of Strength ($\approx 0.18$) is consistently lower than the Assortativity of Degree ($\approx 0.50$).
+This implies that while popular shows are structurally connected, the strongest taste affinities are located in the niche clusters,
+not the mainstream core.
+
+% --- USER-USER NETWORK SECTION ---
+
+\subsection{User-User Network}
+\label{sec:user_topology}
+
+In stark contrast to the Anime content network—which became "sparse" and harder to traverse as it grew—the User interaction network
+exhibits the classic properties of Network Densification. As the community expanded, the social distance between users collapsed,
+making the network significantly more interconnected.
+
+While the "universe" of users grew, the social structure did not fragment into isolated islands. Instead, it evolved into a tight,
+integrated "global village," where new users actively connected to existing hubs rather than the periphery.
+
+\subsubsection{Global Integration and the "Shrinking World"}
+The analysis of weighted path metrics reveals a community that is becoming functionally smaller and easier to traverse, despite growing
+in physical size. 
+
+The evolution of these metrics is presented in the \textit{upper panels} of \textbf{Figure \ref{fig:user_metrics}}. As shown in
+the \textit{upper-left panel}, the average weighted path length dropped sharply from $\sim$0.45 in 2006 to $\sim$0.31 by 2009,
+maintaining this lower baseline through 2018. This reduction is a hallmark of the "Small World" effect: as the platform matured,
+users formed bridging connections, accelerating the flow of information across the graph.
+
+Similarly, the network diameter (\textit{upper-right panel}) contracted from $\sim$1.08 to $<0.99$. Unlike the Anime graph, where taste
+divergence created massive gaps, the social graph's diameter is shrinking. This indicates that even socially distant groups
+(e.g., distinct language communities) are becoming more connected to the mainstream core.
+
+\begin{figure*}[t] % В ACM шаблоне здесь лучше использовать [t] или [b], см. пояснение ниже
+    \centering
+    % Row 1: Path Length & Diameter
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/users_path_length_evolution.png}
+        \label{fig:user_path}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/users_diameter_evolution.png}
+        \label{fig:user_diameter}
+    \end{subfigure}
+    
+    \vspace{0.4cm} 
+    
+    % Row 2: Clustering & Node Strength
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/users_clustering_evolution.png}
+        \label{fig:user_clustering}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/users_node_strength_2018.png}
+        \label{fig:user_strength}
+    \end{subfigure}
+    
+    \caption{Evolution of User Network Topology (2006–2018). 
+    \textbf{Upper-left:} Avg. Weighted Path Length decreasing, indicating higher integration.
+    \textbf{Upper-right:} Network Diameter contracting, showing the "shrinking world" phenomenon.
+    \textbf{Bottom-left:} Clustering Coefficient peaking in 2009 and slowly stabilizing, reflecting the balance between
+    clique formation and expansion.
+    \textbf{Bottom-right:} Node Strength Distribution (2018) following a strict Power Law, highlighting the dominance of "Super-Users".}
+    \label{fig:user_metrics}
+\end{figure*}
+
+\subsubsection{Local Cohesion and Community Structure}
+While the network became globally smaller, the local structure evolved to balance rapid growth with intimate social circles.
+The \textit{bottom-left panel} of \textbf{Figure \ref{fig:user_metrics}} shows the Average Clustering Coefficient. It peaked
+in 2009 ($\sim$0.73) during the platform's initial boom, followed by a gentle decline to $\sim$0.66. 
+
+A score of 0.66 remains exceptionally high for a large social network. The slight decline suggests a natural dilution of cliques as
+users added diverse friends, but the high retention proves the community is fundamentally built on strong, overlapping friend groups
+rather than loose acquaintances.
+
+\subsubsection{Influence and Inequality}
+The distribution of influence confirms a highly stratified social hierarchy. The log-log plot in the \textit{bottom-right panel}
+demonstrates a strict linear descent, characteristic of a Scale-Free Network ($P(k) \sim k^{-\gamma}$).
+
+The graph is dominated by a tiny fraction of "Super-Users" (hubs) who possess nearly $1,000\times$ the connectivity of the average user.
+These hubs act as the structural "glue" that holds the giant component together, enabling the short path lengths observed in
+Section \ref{sec:user_topology}.
