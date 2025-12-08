@@ -79,11 +79,25 @@ class ClusterEvaluation:
             if len(nodes) < 3: continue 
             
             all_values = []
+            valid_nodes_info = []
             for n in nodes:
-                val = self.anime_info.get(n, {}).get(attribute)
-                if val:
-                    if isinstance(val, set): all_values.extend(list(val))
-                    else: all_values.append(val)
+                node_info = self.anime_info.get(n)
+
+                if node_info is None and isinstance(n, str) and n.isdigit():
+                    node_info = self.anime_info.get(int(n))
+                
+                # 3. Если нет, и n - int, ищем как str (на всякий случай)
+                if node_info is None and isinstance(n, int):
+                    node_info = self.anime_info.get(str(n))
+
+                if node_info:
+                    val = node_info.get(attribute)
+                    if val:
+                        valid_nodes_info.append(val) # Запоминаем значение атрибута
+                        if isinstance(val, (set, list, tuple)):
+                            all_values.extend(list(val))
+                        else:
+                            all_values.append(val)
             
             if not all_values: continue
             
@@ -92,12 +106,15 @@ class ClusterEvaluation:
             
             # Сколько узлов его имеют
             match_count = 0
-            for n in nodes:
-                val = self.anime_info.get(n, {}).get(attribute, set())
-                if isinstance(val, set):
-                    if most_common in val: match_count += 1
+            for val in valid_nodes_info:
+                # Нормализация для проверки in
+                if isinstance(val, (set, list, tuple)):
+                    check_list = val
                 else:
-                    if most_common == val: match_count += 1
+                    check_list = [val]
+
+                if most_common in check_list: 
+                    match_count += 1
             
             correct += match_count
             total += len(nodes)

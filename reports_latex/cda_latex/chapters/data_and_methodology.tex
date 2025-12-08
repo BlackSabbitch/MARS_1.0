@@ -1,0 +1,91 @@
+% !TeX root = main.tex
+
+\section{Data and Methodology}
+
+\subsection{Dataset Acquisition and Preprocessing}
+
+The data originates from a publicly available kaggle datasets aggregated from MAL profiles \cite{hernan4444, azathoth42},
+covering the period from 2006 to 2018. Given the platform's predominantly international user base, the dataset reflects global
+consumption patterns rather than domestic Japanese trends.
+
+To ensure data quality, we applied a multi-stage filtering pipeline:
+\begin{itemize}
+    \item \textbf{Bot Detection:} Removal of inactive accounts and profiles exhibiting automated behavior.
+    \item \textbf{Percentile-based Truncation:} We excluded users falling into the extreme tails of the activity distribution.
+    This removes users with too few votes (insufficient signal for clustering) and those with implausibly high vote counts,
+    ensuring the analysis focuses on human-scale consumption patterns.
+\end{itemize}
+
+The final processed dataset comprises approximately \textbf{85,000 unique users} and \textbf{6,500 anime titles}.
+
+\subsection{Graph Projection and Topology Construction}
+We model the system as a bipartite graph which is subsequently projected into two distinct monopartite networks. The detailed
+construction pipelines are described in Sections \ref{sec:pipeline_anime} and \ref{sec:pipeline_users}, respectively.
+
+\subsubsection{Anime-Anime Network}
+In this projection, an edge exists if two titles share a common voter. To account for varying audience sizes, we utilized the
+\textbf{Jaccard Similarity} index as the edge weight. 
+$$ J(A,B) = \frac{|U_A \cap U_B|}{|U_A \cup U_B|} $$
+Given the extreme density of the raw projection (where a single popular anime could fully connect thousands of users),
+we applied a hard threshold of $J > 0.05$. This effectively prunes weak links formed by random coincidences while preserving
+significant genre or fandom connections.
+
+\subsubsection{User-User Network}
+Here, an edge connects two users if they have rated the same anime. The edge weight is defined as the raw count of shared titles
+(co-votes). A major challenge in this projection is the variance in edge weights, which range from negligible values (2-3 shared
+items) to tens of thousands ($10^4$). To address this, we implemented a cutoff threshold: edges were retained only if users shared
+more than \textbf{3 titles}.
+
+Anyway, even after thresholding, the user-user raw network projection suffered from extreme density saturation. Popular
+"blockbuster" titles (e.g., \textit{Death Note}, \textit{Attack On Titan}) act as super-hubs; a single vote for such a title
+effectively connects a user to thousands of others, creating a near-clique structure that obscures genuine taste communities. So,
+this titles had to be deleted from the dataset prior to projection.
+
+\subsubsection{Further Sparsification Attempts}
+More aggressive sparsification techniques (e.g., Backbone extraction, k-NN) were tested but did not reveal significantly distinct
+structural patterns. Consequently, we retained the simpler approach to avoid unnecessary information loss while maintaining
+structural clarity.
+
+\subsection{Resulting Topology}
+These thresholding strategies proved effective in mitigating the "hairball" phenomenon common in social graphs. The resulting networks
+exhibited a graph density in the range of $0.2 - 0.3$, striking a balance between sparsity (for efficient clustering) and connectivity
+(preserving the Giant Connected Component).
+
+\subsection{Sparsification and Topology Correction}
+
+To extract the meaningful "backbone" of the network, we applied a multi-stage sparsification pipeline:
+\begin{enumerate}
+    \item \textbf{k-Nearest Neighbors (k-NN):} Restricting node connections to their $k$ strongest peers to preserve local structure.
+    \item \textbf{Disparity Filter (Backbone):} Extracting statistically significant edges to retain multiscale structure while discarding
+    random noise.
+\end{enumerate}
+
+Only after these topological corrections is the graph subjected to the Leiden community detection algorithm and Random Walk simulations.
+
+\subsection{Computational Framework and Reproducibility}
+To ensure reproducibility and handle large-scale temporal networks efficiently, we developed a dedicated modular Python framework
+\texttt{project\_cda} \cite{mars_project_repo}, which is a core part of the open-source repository MARS\_1.0. The framework is
+designed with a modular architecture to support the full research lifecycle:
+
+\paragraph{Graph Construction Engine}
+The \texttt{AnimeGraphBuilder}, \texttt{UserGraphBuilder} modules utilize streaming JSON parsers (`ijson`) to process massive user
+interaction logs with minimal memory footprint. They implement the projection logic described in Section \ref{sec:anime_topology}
+and support vectorized graph operations via the `igraph` C-core, ensuring high performance even for dense snapshots.
+
+\paragraph{Simulation and Analysis Modules}
+The framework includes specialized components for dynamic analysis:
+\begin{itemize}
+    \item \textbf{CommunityTracker:} Implements a greedy matching algorithm based on Jaccard similarity to trace cluster
+    lineage across time steps.
+    \item \textbf{RandomCrowd:} An agent-based simulation engine that deploys stochastic walkers to probe network topology
+    and user navigation patterns.
+    \item \textbf{ClusterEvaluation:} Encapsulates the calculation of structural (Modularity), semantic (Purity), and
+    information-theoretic (Entropy) metrics.
+\end{itemize}
+
+\paragraph{Data Management and Caching}
+Given the computational cost of generating 13 annual snapshots with varying hyperparameters, we implemented a robust caching
+system managed by a \texttt{PathManager}. This module enforces idempotency: each experimental configuration (edge weights,
+sparsification, clustering algorithm) generates a unique hash signature. If a serialized artifact exists for a given configuration,
+it is loaded instantly ("lazy evaluation"), preventing redundant computations. The exact data schema required to run the pipeline
+is documented in the repository's \texttt{README.md}.

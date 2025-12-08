@@ -2,65 +2,34 @@
 
 \section{Introduction}
 
-Anime has grown from a niche subculture into a global phenomenon, influencing
-millions of viewers and shaping media trends across countries. Beyond entertainment,
-anime data offers a fascinating window into human preferences, cultural diffusion,
-and social behavior. Analyzing how users rate and interact with anime provides opportunities
-to understand patterns in collective taste, popularity dynamics, and even cross-cultural
-differences in media consumption.
+\subsection{The MyAnimeList Ecosystem as a Complex Network}
+The digital aggregation of cultural preferences has transformed the study of computational sociology. MyAnimeList (MAL),
+established in 2006, serves as a primary registry for anime consumption. Unlike generic social networks where edges represent
+declared friendships, the primary structure of MAL is a bipartite interest graph connecting users to titles. This structure
+provides an optimal environment for analyzing "affinity networks," where community formation is driven by taste homophily
+rather than geographic proximity.
 
-Moreover, anime can be viewed not only as a collection of individual titles, but as a complex
-social network. Genres, studios, franchises, and shared audiences form clusters and hubs:
-tightly knit communities built around specific themes, styles, or narrative structures.
-This creates a rich environment for studying community formation, network effects in popularity,
-and the emergence of subcultures. In this sense, anime serves as a microcosm of larger social
-processes — how groups organize, how trends spread, and how cultural identities form and evolve.
+The period between 2006 and 2018 represents a critical epoch in the globalization of Japanese animation, characterized by the
+transition from a niche subculture to a mainstream entertainment force. Analyzing this period allows for the observation of a
+complete evolutionary cycle of a complex network—from a cohesive core to a fragmented, multi-polar topology.
 
-From a data-scientific perspective, anime datasets present multiple challenges and opportunities,
-offering a rare combination of numerical, categorical, and textual information embedded in a naturally
-occurring, socially meaningful structure. This makes them well-suited for analyzing real patterns in
-human behavior through feature engineering and exploratory data analysis. They allow us to explore
-questions such as how different genres appeal to different audiences, how collective preferences
-change over time, how collective user behavior emerges from individual ratings, and how user
-communities structure themselves around shared interests.
+\subsection{Objectives and Research Questions}
+The primary objective of this study is to model the MAL community as a dynamic, evolving system. Traditional static graph analysis
+fails to capture the temporal fluidity of user interests. To address this, we employ a multi-stage analytical framework combining
+dynamic community detection, stochastic simulation, and predictive modeling.
 
-In today's environment, where online platforms dominate media consumption, understanding patterns
-in user ratings and content characteristics has both practical and scientific value. Insights derived
-from anime data can inform recommendation systems, guide content creation, and serve as a microcosm
-for analyzing trends in larger entertainment ecosystems. Studying anime data helps illuminate the
-mechanisms of popularity, personalization, and cultural diffusion, providing insights that generalize
-far beyond this specific medium. In other words, anime is not only culturally significant, but also
-a compelling, real-world playground for developing and demonstrating data science methods.
+A key focus of our investigation is the evaluation of topological agents. We test the hypothesis that standard Random Walker models,
+which rely solely on structural connectivity, are sufficient to simulate user navigation in affinity networks. Furthermore, we explore
+whether the predictive power of machine learning models can be enhanced by incorporating mesoscale network features derived from
+community detection.
 
-For this project, we use the \textit{Anime Recommendation Database 2020}
-from Kaggle\cite{hernan4444anime2020} \footnote{\url{https://www.kaggle.com/datasets/hernan4444/anime-recommendation-database-2020}},
-which contains detailed information from \textbf{MyAnimeList} about over 16,000 anime titles and ratings
-from more than 300,000 users. This dataset is rich, heterogeneous, and somewhat messy — exactly the kind
-of data that makes data science exciting. 
-
-The key questions we aim to explore include \cite{hernan4444anime2020}:
-
+The research is guided by the following key questions:
 \begin{itemize}
-    \item Which anime are the most highly rated, and which are underrated compared to their popularity?
-    \item How do user ratings vary across genres, release years, and demographics?
-    \item Can we identify clusters of similar anime based on genre, themes, and user ratings?
-    \item Are there patterns in user behavior, such as tendencies to rate certain genres more favorably?
+    \item \textbf{Topological Evolution:} How did the structural properties of the MAL graph change during the community's
+    expansion (2006-2018)?
+    \item \textbf{Community Dynamics:} How do taste clusters evolve over time, and can we identify distinct phases of fragmentation
+    using dynamic community detection (Leiden)?
+    \item \textbf{Limits of Topological Simulation:} To what extent do empirical user trajectories diverge from theoretical Random Walk models?
+    \item \textbf{Predictive Modeling:} Can we predict user migration between communities using supervised learning, and does the
+    inclusion of clustering metrics improve model performance?
 \end{itemize}
-
-Through exploratory data analysis, we hope to extract meaningful insights, for example:
-
-\begin{itemize}
-    \item Genre trends: which genres consistently attract high ratings.
-    \item Temporal patterns: how ratings and popularity evolve over time.
-    \item Relationships between anime features (genre, episodes, year) and user ratings.
-\end{itemize}
-
-However, the dataset also has inherent limitations. We cannot reliably infer causal relationships from these
-ratings, nor can we accurately predict the future success of an anime solely based on historical user ratings.
-Additionally, user bias, incomplete data, and differences in rating scales limit the conclusions we can draw.
-
-By focusing on data cleaning, exploratory analysis, and interpretation, this project demonstrates how raw,
-real-world data can be transformed into actionable insights, while also highlighting the boundaries of what
-such data can tell us.
-
-The analysis pipeline and code are provided in the companion notebook \cite{animeprojectnotebook2025}.

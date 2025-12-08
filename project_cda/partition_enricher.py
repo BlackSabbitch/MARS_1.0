@@ -49,6 +49,13 @@ class PartitionEnricher:
         except (ValueError, SyntaxError):
             return {val}
 
+    def _ensure_id_type(self, df, col_name):
+        try:
+            df[col_name] = df[col_name].astype('Int64')
+        except (ValueError, TypeError):
+            df[col_name] = df[col_name].astype("string")
+        return df
+
     def enrich_partition(self, partition_csv_path: str) -> pd.DataFrame:
         """Склеивает результаты кластеризации с метаданными."""
         df_part = pd.read_csv(partition_csv_path)
@@ -56,9 +63,10 @@ class PartitionEnricher:
         # Проверка, что ключ есть в обоих файлах
         if self.key_col not in df_part.columns:
             raise ValueError(f"Partition file is missing key column: {self.key_col}")
-        
-        df_part[self.key_col] = df_part[self.key_col].astype('Int64')
-        self.meta_df[self.key_col] = self.meta_df[self.key_col].astype('Int64')
+        self._ensure_id_type(df_part, self.key_col)
+        self._ensure_id_type(self.meta_df, self.key_col)
+        # df_part[self.key_col] = df_part[self.key_col].astype('Int64')
+        # self.meta_df[self.key_col] = self.meta_df[self.key_col].astype('Int64')
 
         return df_part.merge(self.meta_df, on=self.key_col, how='left')
 

@@ -111,17 +111,17 @@ class CommunityTracker:
             self.prev_clusters_sets[global_id] = nodes
 
     @classmethod
-    def save_aligned_history_to_csv(cls, aligned_history: dict, filename: str):
+    def save_aligned_history_to_csv(cls, aligned_history: dict, filename: str, id_col_name: str = "anime_id"):
         """Сохраняет детальный файл и файл статистики."""
         partition_rows = []
         stats_rows = []
 
         for year, mapping in aligned_history.items():
             # Детали
-            for anime_id, cluster_id in mapping.items():
+            for node_id, cluster_id in mapping.items():
                 partition_rows.append({
                     "year": year, 
-                    "anime_id": anime_id, 
+                    id_col_name: node_id, 
                     "cluster_id": cluster_id
                 })
             

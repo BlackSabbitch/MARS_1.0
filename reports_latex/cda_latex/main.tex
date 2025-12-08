@@ -1,16 +1,68 @@
 % !TeX root = main.tex
 
-\documentclass{article}
-%\usepackage[T1]{fontenc}      % обязательно! # ложь
-%\usepackage[utf8]{inputenc}
-%\usepackage{lmodern}          % обязательно для отображения │ ├ └ ─ # ложь
-%\usepackage{verbatim}
-%\renewcommand{\ttdefault}{lmvtt}
-%\usepackage{fontspec}
-%\setmonofont{DejaVu Sans Mono}
+% \documentclass{article}
+\documentclass[sigconf]{acmart}
+\usepackage{graphicx}
 \usepackage{amsmath, amssymb}
+\usepackage{subcaption}
+% --- Метаданные (убираем копирайт для черновика) ---
+\settopmatter{printacmref=false} % Убирает блок ссылок ACM внизу
+\setcopyright{none}
+\renewcommand\footnotetextcopyrightpermission[1]{} % Убирает копирайт
+\pagestyle{plain} % Включает нумерацию страниц (для черновика полезно)
+%\usepackage[section]{placeins}
+\usepackage{float}
+\pagestyle{plain}
+\settopmatter{printfolios=true, printacmref=false}
+\acmConference[Project on Complex Data Analysis]{Project on Complex Data Analysis}{10/12/2025}{Lisbon, Portugal}
+\acmYear{2025}
 \begin{document}
+\title{Evolution of Anime Co-Viewership Networks (2006–2018)}
+% 2. АВТОРЫ (Вставляются ПЕРЕД \maketitle)
+% Автор 1
+\author{Iaroslav Sagan (66661)}
+\affiliation{%
+  \institution{University of Lisbon}
+  \city{Lisbon}
+  \country{Portugal}
+}
+\email{yaroslav_sagan@gmail.com}
+
+% Автор 2
+\author{Anna Maksymchuk (66662)}
+\affiliation{%
+  \institution{University of Lisbon}
+  \city{Lisbon}
+  \country{Portugal}
+}
+\email{anna.i.maksymchuk@gmail.com}
+
+\author{Maria Samosudova (66663)}
+\affiliation{%
+  \institution{University of Lisbon}
+  \city{Lisbon}
+  \country{Portugal}
+}
+\email{samosudova@gmail.com}
+
+\begin{abstract}
+This study analyzes the structural evolution of the MyAnimeList platform (2006–2018). Utilizing time-sliced networks,
+we examine the dynamics of taste communities and user navigation. We employ the Leiden algorithm to trace the genealogy
+of clusters from a cohesive core to a fragmented landscape. Regarding user modeling, we find that stochastic random walker
+agents diverge from empirical trajectories, indicating the limitations of purely topological simulation. In contrast, machine
+learning experiments successfully predict user migration patterns. Crucially, we demonstrate that the inclusion of community-based
+clustering metrics significantly improves model accuracy, highlighting the predictive value of mesoscale network features.
+
+\keywords{Social Network Analysis, Community Detection, Dynamic Graphs, Random Walks, User Modeling}
+\end{abstract}
+
+\maketitle
+
+\input{chapters/abstract.tex}
 \input{chapters/introduction.tex}
+\input{chapters/data_and_methodology.tex}
+\input{chapters/global_topological_evolution.tex}
+
 \input{chapters/overview.tex}
 \input{chapters/fake_users_generation.tex}
 \input{chapters/dataset_curriculum.tex}
