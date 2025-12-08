@@ -24,7 +24,7 @@ construction pipelines are described in Sections \ref{sec:pipeline_anime} and \r
 
 \subsubsection{Anime-Anime Network}
 In this projection, an edge exists if two titles share a common voter. To account for varying audience sizes, we utilized the
-\textbf{Jaccard Similarity} index as the edge weight. 
+\textbf{Jaccard Similarity} \cite{jaccard} index as the edge weight. 
 $$ J(A,B) = \frac{|U_A \cap U_B|}{|U_A \cup U_B|} $$
 Given the extreme density of the raw projection (where a single popular anime could fully connect thousands of users),
 we applied a hard threshold of $J > 0.05$. This effectively prunes weak links formed by random coincidences while preserving
@@ -59,9 +59,10 @@ To ensure reproducibility and handle large-scale temporal networks efficiently, 
 designed with a modular architecture to support the full research lifecycle:
 
 \paragraph{Graph Construction Engine}
-The \texttt{AnimeGraphBuilder}, \texttt{UserGraphBuilder} modules utilize streaming JSON parsers (`ijson`) to process massive user
-interaction logs with minimal memory footprint. They implement the projection logic described in Section \ref{sec:anime_topology}
-and support vectorized graph operations via the `igraph` C-core, ensuring high performance even for dense snapshots.
+The graph construction modules \texttt{AnimeGraphBuilder} and \texttt{UserGraphBuilder} modules utilize streaming JSON parsers
+(`ijson`) to process massive user interaction logs with minimal memory footprint. They implement the projection logic described
+in Section \ref{sec:anime_topology} and support vectorized graph operations via the `igraph` C-core \cite{igraph}, ensuring high performance even
+for dense snapshots.
 
 \paragraph{Simulation and Analysis Modules}
 The framework includes specialized components for dynamic analysis:

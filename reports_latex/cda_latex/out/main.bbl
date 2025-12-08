@@ -1,9 +1,36 @@
-\begin{thebibliography}{1}
+\begin{thebibliography}{10}
 
 \bibitem{azathoth42}
 Azathoth.
 \newblock Anime recommendation database 2020.
 \newblock \url{https://www.kaggle.com/datasets/azathoth42/myanimelist}, 2018.
+
+\bibitem{log}
+Albert-László Barabási and Réka Albert.
+\newblock Emergence of scaling in random networks.
+\newblock {\em Science}, 286(5439):509--512, 1999.
+
+\bibitem{affin}
+Everett M.~G Borgatti, S.~P.
+\newblock Network analysis of 2-mode data.
+\newblock {\em Social networks}, 19(3):243--264, 1997.
+
+\bibitem{igraph}
+Tamas~Nepusz Gabor~Csardi.
+\newblock The igraph software package for complex network research.
+\newblock \url{https://igraph.org/}, 2005.
+
+\bibitem{catboost}
+Aleksandr Vorobev Anna Veronika Dorogush Andrey~Gulin Liudmila~Prokhorenkova,
+  Gleb~Gusev.
+\newblock Catboost: unbiased boosting with categorical features.
+\newblock In {\em 32nd Conference on Neural Information Processing Systems
+  (NeurIPS 2018)}, 2018.
+
+\bibitem{walker}
+Renaud~Lambiotte Naoki~Masuda, Mason A.~Porter.
+\newblock Random walks and diffusion on networks.
+\newblock {\em Physics Reports}, 716(2), 2016.
 
 \bibitem{mars_project_repo}
 Iaroslav Sagan.
@@ -11,6 +38,22 @@ Iaroslav Sagan.
 \newblock
   \url{https://github.com/BlackSabbitch/MARS_1.0/tree/main/project_cda}, 2025.
 \newblock Accessed: 2025-10-27.
+
+\bibitem{jaccard}
+Ikvinderpal Singh.
+\newblock Jaccard index versus preferential attachment: A comparative study of
+  similarity based link prediction techniques in complex networks.
+\newblock {\em Journal of Computer Technology & Applications}, 14(2), 2023.
+
+\bibitem{small_world}
+Duncan J. Watts & Steven~H. Strogatz.
+\newblock Collective dynamics of ‘small-world’ networks.
+\newblock {\em Nature}, 393:440--442, 1998.
+
+\bibitem{leiden}
+N.~J. van~Eck V.~A.~Traag, L.~Waltman.
+\newblock From louvain to leiden: guaranteeing well-connected communities.
+\newblock {\em Scientific Reports}, 9(5233), 2019.
 
 \bibitem{hernan4444}
 Hernan Valdivieso.

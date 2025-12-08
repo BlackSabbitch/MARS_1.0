@@ -1,0 +1,24 @@
+\section{Conclusion and Future Work}
+\label{sec:conclusion}
+
+This study presented a comprehensive longitudinal analysis of the MyAnimeList ecosystem (2006–2018), offering a dual perspective on
+the evolution of digital affinity networks: from the macroscopic topology of the graph to the microscopic dynamics of individual user migration.
+
+Our findings challenge the assumption that expanding social networks necessarily become more cohesive. Instead, we observed a
+\textbf{"Densification-Sparsification Paradox"}: while the user social graph densified into a "Small World," the content interest graph
+expanded into a sparse "Metropolis" characterized by increasing taste divergence. This confirms that as the anime medium transitioned
+from a niche subculture to a global entertainment force, the unified community fractured into distinct, self-reinforcing fandoms.
+
+The methodological comparison of community detection algorithms identified the \textbf{Leiden algorithm} ($\gamma=1.0$) as the optimal
+tool for longitudinal tracking, striking a balance between structural modularity and semantic interpretability. We demonstrated that "taste"
+in this domain is a latent variable that correlates with, but is not synonymous with, explicit genre tags.
+
+A critical contribution of this work is the evaluation of user navigation models. The stochastic Random Walker experiment yielded a negative
+result of significant diagnostic value (similarity $\approx 4\%$), effectively disproving the hypothesis of "Topological Determinism."
+Users do not passively flow down the gradients of the graph; their trajectories are driven by active, content-aware choices that defy
+simple Markovian logic.
+
+Consequently, we showed that user migration is a predictable phenomenon only when modeled as a complex interaction between structure and
+behavior. The CatBoost classifier achieved high accuracy (ROC AUC 0.915), identifying the \textbf{Intra-Community Ratio (ICR)} as the
+dominant predictor of stability. This suggests that the "social gravity" holding a user within a fandom is quantifiable and that migration
+is preceded by a measurable decay in local ties.

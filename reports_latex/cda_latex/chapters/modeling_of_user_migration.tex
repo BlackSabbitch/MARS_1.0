@@ -1,7 +1,8 @@
 \section{Predictive Modeling of User Migration}
+\label{sec:ml_migration}
 
 In this chapter\footnote{The complete experimental pipeline and visualization tools are available in the project
-repository: \texttt{project\_cda/3\_user\_migration\_pipeline.ipynb}.}, we address the problem of user migration between communities,
+repository: \texttt{project\_cda/4\_user\_migration\_pipeline.ipynb}.}, we address the problem of user migration between communities,
 a fundamental challenge in dynamic social network analysis. We model the MAL user network as an evolving graph $G_t = (V_t, E_t)$,
 where nodes represent unique users and weighted edges denote social proximity based on shared anime consumption history. Since the
 statistical and topological properties of the network fluctuate significantly over time, our analysis focuses on transitions between
@@ -24,7 +25,7 @@ To identify distinct user communities within each temporal snapshot, we employ t
 of modularity maximization with the classical Louvain method, Leiden is selected for its superior stability, scalability, and topological
 guarantees on large-scale networks.
 
-The primary advantage of Leiden over Louvain lies in its handling of community connectivity, scalability and reliability on large networks.
+The primary advantage of Leiden over Louvain lies in its handling of community connectivity \cite{leiden}, scalability and reliability on large networks.
 While Louvain is efficient, it can produce poorly connected or even disconnected communities, Leiden addresses this through a distinct
 \textit{refinement phase}, guaranteeing that all resulting clusters are well-connected. This is critical for our study, as membership in
 a poorly connected cluster could represent an algorithmic artifact rather than genuine social cohesion.
@@ -39,9 +40,6 @@ Alternative community detection methods were evaluated but rejected due to speci
     \item \textbf{Label Propagation:} Although extremely fast, its non-deterministic nature leads to unstable partitions, making
     longitudinal tracking unreliable.
 \end{itemize}
-
-Leiden combines efficiency, stability, and high-quality partitions. Its near-linear scalability allows us to handle the network effectively,
-while the refinement phase ensures structurally meaningful communities.
 
 Leiden is a hierarchical algorithm, producing a dendrogram of partitions controlled by the resolution parameter $\gamma$.
 \begin{itemize}
@@ -77,7 +75,7 @@ feature vector $X_u^{(t)}$ comprises four distinct categories:
 This results in a comprehensive per-user, per-year feature vector integrating static, structural, and dynamic signals for predictive modeling.
 
 \subsection{Model Specification and Performance Assessment}
-We utilized \textbf{CatBoost}, a gradient boosting algorithm on decision trees, for the classification task. CatBoost was selected for its
+We utilized \textbf{CatBoost} \cite{catboost}, a gradient boosting algorithm on decision trees, for the classification task. CatBoost was selected for its
 native handling of categorical features (e.g., community ID, location) without one-hot encoding, robustness to missing values and different
 feature scales, and ability to model complex non-linear interactions between structural and behavioral signals. Crucially, it offers native
 support for class imbalance via internal weighting, allowing the algorithm to effectively handle the rarity of migration events.
@@ -124,7 +122,9 @@ The \textbf{current community assignment} itself also has a strong effect, indic
 communities (i.e., some communities are inherently more unstable or "leaky" than others).
 
 \textbf{PageRank} exhibits a non-linear stabilizing effect: highly influential users are less likely to migrate, suggesting that social capital
-creates "inertia." Demographically, older users show lower migration propensities.
+creates "inertia."
+
+Demographically, \textbf{older} users show lower migration propensities.
 
 These results emphasize that user migration cannot be captured by singular metrics. Only a comprehensive analysis combining network topology,
 temporal changes, and behavioral features reveals the true mechanisms driving community shifts.

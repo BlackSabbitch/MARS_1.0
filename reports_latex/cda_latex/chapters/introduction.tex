@@ -6,7 +6,7 @@
 The digital aggregation of cultural preferences has transformed the study of computational sociology. MyAnimeList (MAL),
 established in 2006, serves as a primary registry for anime consumption. Unlike generic social networks where edges represent
 declared friendships, the primary structure of MAL is a bipartite interest graph connecting users to titles. This structure
-provides an optimal environment for analyzing "affinity networks," where community formation is driven by taste homophily
+provides an optimal environment for analyzing "affinity networks" \cite{affin}, where community formation is driven by taste homophily
 rather than geographic proximity.
 
 The period between 2006 and 2018 represents a critical epoch in the globalization of Japanese animation, characterized by the
@@ -18,7 +18,7 @@ The primary objective of this study is to model the MAL community as a dynamic, 
 fails to capture the temporal fluidity of user interests. To address this, we employ a multi-stage analytical framework combining
 dynamic community detection, stochastic simulation, and predictive modeling.
 
-A key focus of our investigation is the evaluation of topological agents. We test the hypothesis that standard Random Walker models,
+A key focus of our investigation is the evaluation of topological agents. We test the hypothesis that standard Random Walker models \cite{walker},
 which rely solely on structural connectivity, are sufficient to simulate user navigation in affinity networks. Furthermore, we explore
 whether the predictive power of machine learning models can be enhanced by incorporating mesoscale network features derived from
 community detection.
@@ -28,7 +28,7 @@ The research is guided by the following key questions:
     \item \textbf{Topological Evolution:} How did the structural properties of the MAL graph change during the community's
     expansion (2006-2018)?
     \item \textbf{Community Dynamics:} How do taste clusters evolve over time, and can we identify distinct phases of fragmentation
-    using dynamic community detection (Leiden)?
+    using dynamic community detection?
     \item \textbf{Limits of Topological Simulation:} To what extent do empirical user trajectories diverge from theoretical Random Walk models?
     \item \textbf{Predictive Modeling:} Can we predict user migration between communities using supervised learning, and does the
     inclusion of clustering metrics improve model performance?
