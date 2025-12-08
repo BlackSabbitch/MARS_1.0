@@ -61,3 +61,31 @@ To extract the meaningful "backbone" of the network, we applied a multi-stage sp
 \end{enumerate}
 
 Only after these topological corrections is the graph subjected to the Leiden community detection algorithm and Random Walk simulations.
+
+\subsection{Computational Framework and Reproducibility}
+To ensure reproducibility and handle large-scale temporal networks efficiently, we developed a dedicated modular Python framework
+\texttt{project\_cda} \cite{mars_project_repo}, which is a core part of the open-source repository MARS\_1.0. The framework is
+designed with a modular architecture to support the full research lifecycle:
+
+\paragraph{Graph Construction Engine}
+The \texttt{AnimeGraphBuilder}, \texttt{UserGraphBuilder} modules utilize streaming JSON parsers (`ijson`) to process massive user
+interaction logs with minimal memory footprint. They implement the projection logic described in Section \ref{sec:anime_topology}
+and support vectorized graph operations via the `igraph` C-core, ensuring high performance even for dense snapshots.
+
+\paragraph{Simulation and Analysis Modules}
+The framework includes specialized components for dynamic analysis:
+\begin{itemize}
+    \item \textbf{CommunityTracker:} Implements a greedy matching algorithm based on Jaccard similarity to trace cluster
+    lineage across time steps.
+    \item \textbf{RandomCrowd:} An agent-based simulation engine that deploys stochastic walkers to probe network topology
+    and user navigation patterns.
+    \item \textbf{ClusterEvaluation:} Encapsulates the calculation of structural (Modularity), semantic (Purity), and
+    information-theoretic (Entropy) metrics.
+\end{itemize}
+
+\paragraph{Data Management and Caching}
+Given the computational cost of generating 13 annual snapshots with varying hyperparameters, we implemented a robust caching
+system managed by a \texttt{PathManager}. This module enforces idempotency: each experimental configuration (edge weights,
+sparsification, clustering algorithm) generates a unique hash signature. If a serialized artifact exists for a given configuration,
+it is loaded instantly ("lazy evaluation"), preventing redundant computations. The exact data schema required to run the pipeline
+is documented in the repository's \texttt{README.md}.
