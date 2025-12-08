@@ -260,7 +260,7 @@ class GraphIO:
         base = os.path.splitext(path)[0]
 
         # ------------------------------
-        # NODES → Parquet
+        # NODES -> Parquet
         # ------------------------------
         nodes_data = []
         for n, attrs in G.nodes(data=True):
@@ -273,7 +273,7 @@ class GraphIO:
         df_nodes.to_parquet(nodes_out, index=False)
 
         # ------------------------------
-        # EDGES → Parquet
+        # EDGES -> Parquet
         # ------------------------------
         edges_data = []
         for u, v, attrs in G.edges(data=True):
