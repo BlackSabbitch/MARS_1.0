@@ -5,32 +5,12 @@ Azathoth.
 \newblock Anime recommendation database 2020.
 \newblock \url{https://www.kaggle.com/datasets/azathoth42/myanimelist}, 2018.
 
-\bibitem{animeresearch2020}
-International Anime~Research Project.
-\newblock Anime survey 2020 preliminary results.
-\newblock
-  \url{https://sites.google.com/site/animeresearch/past-results/2020-results},
-  2020.
-
-\bibitem{citiesdistribution}
-Donato Riccio.
-\newblock World cities population - cleaned version.
-\newblock
-  \url{https://www.kaggle.com/datasets/donatoriccio/world-cities-population-cleaned-version},
-  2022.
-
 \bibitem{mars_project_repo}
 Iaroslav Sagan.
 \newblock Mars\_1.0: Manga and anime research software.
 \newblock
   \url{https://github.com/BlackSabbitch/MARS_1.0/tree/main/project_cda}, 2025.
 \newblock Accessed: 2025-10-27.
-
-\bibitem{animeindustry2020}
-{The Association of Japanese Animations}.
-\newblock Anime industry report 2020.
-\newblock \url{https://aja.gr.jp/download/anime-industry-report-2020-summary},
-  2020.
 
 \bibitem{hernan4444}
 Hernan Valdivieso.

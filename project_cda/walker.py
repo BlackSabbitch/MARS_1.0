@@ -121,7 +121,6 @@ class Walker:
             "median_delta": np.median(deltas) if deltas.size else None,
             "perc90_delta": np.percentile(deltas, 90) if deltas.size else None,
         }
-    
 
 class RandomWalker:
     _counter = 0

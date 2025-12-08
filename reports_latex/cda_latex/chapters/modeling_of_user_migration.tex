@@ -1,9 +1,11 @@
 \section{Predictive Modeling of User Migration}
 
-In this chapter, we address the problem of user migration between communities, a fundamental challenge in dynamic social network analysis.
-We model the MAL user network as an evolving graph $G_t = (V_t, E_t)$, where nodes represent unique users and weighted edges denote social
-proximity based on shared anime consumption history. Since the statistical and topological properties of the network fluctuate significantly
-over time, our analysis focuses on transitions between consecutive temporal snapshots, denoted as $t$ and $t+1$.
+In this chapter\footnote{The complete experimental pipeline and visualization tools are available in the project
+repository: \texttt{project\_cda/3\_user\_migration\_pipeline.ipynb}.}, we address the problem of user migration between communities,
+a fundamental challenge in dynamic social network analysis. We model the MAL user network as an evolving graph $G_t = (V_t, E_t)$,
+where nodes represent unique users and weighted edges denote social proximity based on shared anime consumption history. Since the
+statistical and topological properties of the network fluctuate significantly over time, our analysis focuses on transitions between
+consecutive temporal snapshots, denoted as $t$ and $t+1$.
 
 The migration prediction task is formalized as a binary classification problem. Let $C(u, t)$ denote the community assignment
 of user $u$ at time $t$. A user is labeled as a \textit{migrant} if their community membership changes between snapshots:
