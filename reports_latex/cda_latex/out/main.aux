@@ -29,8 +29,7 @@
 \@writefile{toc}{\contentsline {subsubsection}{\numberline {2.2.2}User-User Network}{2}{subsubsection.2.2.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsubsection}{\numberline {2.2.3}Further Sparsification Attempts}{2}{subsubsection.2.2.3}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Resulting Topology}{2}{subsection.2.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Sparsification and Topology Correction}{2}{subsection.2.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Computational Framework and Reproducibility}{2}{subsection.2.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Computational Framework and Reproducibility}{2}{subsection.2.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Graph Construction Engine}{2}{section*.3}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Simulation and Analysis Modules}{2}{section*.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Data Management and Caching}{2}{section*.5}\protected@file@percent }
@@ -47,7 +46,8 @@
 \@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.1}Global Integration and the "Shrinking World"}{3}{subsubsection.3.2.1}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.2}Local Cohesion and Community Structure}{3}{subsubsection.3.2.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.3}Influence and Inequality}{3}{subsubsection.3.2.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {4}Dataset Overview}{3}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Predictive Modeling of User Migration}{3}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Motivation for Community Detection Algorithm Choice}{3}{subsection.4.1}\protected@file@percent }
 \providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
 \newlabel{fig:path_length}{{\caption@xref {fig:path_length}{ on input line 49}}{4}{Increasing Social Distance and Taste Divergence}{figure.caption.6}{}}
 \newlabel{sub@fig:path_length}{{}{4}{Increasing Social Distance and Taste Divergence}{figure.caption.6}{}}
@@ -59,14 +59,6 @@
 \newlabel{sub@fig:node_strength}{{}{4}{Increasing Social Distance and Taste Divergence}{figure.caption.6}{}}
 \@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Evolution of Anime Network Topology (2006–2018). \textbf  {Upper-left:} Average Weighted Path Length showing increased navigation difficulty. \textbf  {Upper-right:} Network Diameter indicating the expansion of the "taste universe". \textbf  {Bottom-left:} Average Clustering Coefficient stabilizing around 0.59, suggesting persistent local cohesion. \textbf  {Bottom-right:} Node Strength Distribution (2018) confirming the scale-free ($P(k) \sim k^{-\gamma }$) nature of the modern network.\relax }}{4}{figure.caption.6}\protected@file@percent }
 \newlabel{fig:anime_metrics}{{1}{4}{Evolution of Anime Network Topology (2006–2018). \textbf {Upper-left:} Average Weighted Path Length showing increased navigation difficulty. \textbf {Upper-right:} Network Diameter indicating the expansion of the "taste universe". \textbf {Bottom-left:} Average Clustering Coefficient stabilizing around 0.59, suggesting persistent local cohesion. \textbf {Bottom-right:} Node Strength Distribution (2018) confirming the scale-free ($P(k) \sim k^{-\gamma }$) nature of the modern network.\relax }{figure.caption.6}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Dataset Structure}{4}{subsection.4.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{anime.csv}{4}{section*.8}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{anime\_with\_synopsis.csv}{4}{section*.9}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{animelist.csv}{4}{section*.10}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{rating\_complete.csv}{4}{section*.11}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{watching\_status.csv}{4}{section*.12}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Strengths of the Dataset}{4}{subsection.4.2}\protected@file@percent }
-\citation{animeindustry2020}
 \newlabel{fig:user_path}{{\caption@xref {fig:user_path}{ on input line 137}}{5}{Global Integration and the "Shrinking World"}{figure.caption.7}{}}
 \newlabel{sub@fig:user_path}{{}{5}{Global Integration and the "Shrinking World"}{figure.caption.7}{}}
 \newlabel{fig:user_diameter}{{\caption@xref {fig:user_diameter}{ on input line 143}}{5}{Global Integration and the "Shrinking World"}{figure.caption.7}{}}
@@ -77,25 +69,44 @@
 \newlabel{sub@fig:user_strength}{{}{5}{Global Integration and the "Shrinking World"}{figure.caption.7}{}}
 \@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Evolution of User Network Topology (2006–2018). \textbf  {Upper-left:} Avg. Weighted Path Length decreasing, indicating higher integration. \textbf  {Upper-right:} Network Diameter contracting, showing the "shrinking world" phenomenon. \textbf  {Bottom-left:} Clustering Coefficient peaking in 2009 and slowly stabilizing, reflecting the balance between clique formation and expansion. \textbf  {Bottom-right:} Node Strength Distribution (2018) following a strict Power Law, highlighting the dominance of "Super-Users".\relax }}{5}{figure.caption.7}\protected@file@percent }
 \newlabel{fig:user_metrics}{{2}{5}{Evolution of User Network Topology (2006–2018). \textbf {Upper-left:} Avg. Weighted Path Length decreasing, indicating higher integration. \textbf {Upper-right:} Network Diameter contracting, showing the "shrinking world" phenomenon. \textbf {Bottom-left:} Clustering Coefficient peaking in 2009 and slowly stabilizing, reflecting the balance between clique formation and expansion. \textbf {Bottom-right:} Node Strength Distribution (2018) following a strict Power Law, highlighting the dominance of "Super-Users".\relax }{figure.caption.7}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Limitations and Potential Biases}{5}{subsection.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Feature Engineering}{5}{subsection.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Model Specification and Performance Assessment}{5}{subsection.4.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Classification Performance Metrics\relax }}{6}{table.caption.8}\protected@file@percent }
+\newlabel{tab:model_performance}{{1}{6}{Classification Performance Metrics\relax }{table.caption.8}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Feature Importance and Behavioral Interpretation}{6}{subsection.4.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}Dataset Overview}{6}{section.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Distribution of SHAP values indicating the contribution of each feature to the model’s predictions.\relax }}{6}{figure.caption.9}\protected@file@percent }
+\newlabel{fig:shap_summary}{{3}{6}{Distribution of SHAP values indicating the contribution of each feature to the model’s predictions.\relax }{figure.caption.9}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Dataset Structure}{6}{subsection.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{anime.csv}{6}{section*.10}\protected@file@percent }
+\citation{animeindustry2020}
 \citation{animeresearch2020}
 \citation{citiesdistribution}
 \citation{animeresearch2020}
 \citation{animeresearch2020}
 \citation{animeresearch2020}
 \citation{animeresearch2020}
-\@writefile{toc}{\contentsline {section}{\numberline {5}Synthetic User Generation}{6}{section.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Data Sources}{6}{subsection.5.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Generation Procedure}{6}{subsection.5.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Notes}{6}{subsection.5.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {6}Dataset and Initial Exploration}{6}{section.6}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {7}Random-Walk Model for User Trajectory Simulation}{7}{section.7}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Motivation}{7}{subsection.7.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}Definition of the Random Walker}{7}{subsection.7.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Asynchrony and Year-Level Dynamics}{7}{subsection.7.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Ensemble-Based Evaluation}{7}{subsection.7.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.5}Consensus Models}{7}{subsection.7.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Markov Consensus.}{7}{section*.15}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{anime\_with\_synopsis.csv}{7}{section*.11}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{animelist.csv}{7}{section*.12}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{rating\_complete.csv}{7}{section*.13}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{watching\_status.csv}{7}{section*.14}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Strengths of the Dataset}{7}{subsection.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Limitations and Potential Biases}{7}{subsection.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Synthetic User Generation}{7}{section.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Data Sources}{7}{subsection.6.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Generation Procedure}{7}{subsection.6.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Notes}{8}{subsection.6.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Dataset and Initial Exploration}{8}{section.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {8}Random-Walk Model for User Trajectory Simulation}{8}{section.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}Motivation}{8}{subsection.8.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.2}Definition of the Random Walker}{8}{subsection.8.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.3}Asynchrony and Year-Level Dynamics}{9}{subsection.8.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.4}Ensemble-Based Evaluation}{9}{subsection.8.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.5}Consensus Models}{9}{subsection.8.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Markov Consensus.}{9}{section*.17}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Medoid Trajectory.}{9}{section*.18}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.6}Interpretation}{9}{subsection.8.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {9}MARS\_1.0 Project Tree}{9}{section.9}\protected@file@percent }
 \bibstyle{plain}
 \bibdata{chapters/references}
 \bibcite{azathoth42}{{1}{}{{}}{{}}}
@@ -106,13 +117,10 @@
 \bibcite{hernan4444}{{6}{}{{}}{{}}}
 \newlabel{tocindent-1}{0pt}
 \newlabel{tocindent0}{0pt}
-\newlabel{tocindent1}{4.62599pt}
+\newlabel{tocindent1}{8.37pt}
 \newlabel{tocindent2}{11.44798pt}
 \newlabel{tocindent3}{20.55595pt}
 \providecommand\NAT@force@numbers{}\NAT@force@numbers
-\@writefile{toc}{\contentsline {paragraph}{Medoid Trajectory.}{8}{section*.16}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.6}Interpretation}{8}{subsection.7.6}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {8}MARS\_1.0 Project Tree}{8}{section.8}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{References}{8}{section*.18}\protected@file@percent }
-\newlabel{TotPages}{{8}{8}{}{page.8}{}}
-\gdef \@abspage@last{8}
+\@writefile{toc}{\contentsline {section}{References}{10}{section*.20}\protected@file@percent }
+\newlabel{TotPages}{{10}{10}{}{page.10}{}}
+\gdef \@abspage@last{10}

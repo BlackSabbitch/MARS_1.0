@@ -1,0 +1,128 @@
+\section{Predictive Modeling of User Migration}
+
+In this chapter, we address the problem of user migration between communities, a fundamental challenge in dynamic social network analysis.
+We model the MAL user network as an evolving graph $G_t = (V_t, E_t)$, where nodes represent unique users and weighted edges denote social
+proximity based on shared anime consumption history. Since the statistical and topological properties of the network fluctuate significantly
+over time, our analysis focuses on transitions between consecutive temporal snapshots, denoted as $t$ and $t+1$.
+
+The migration prediction task is formalized as a binary classification problem. Let $C(u, t)$ denote the community assignment
+of user $u$ at time $t$. A user is labeled as a \textit{migrant} if their community membership changes between snapshots:
+
+\begin{equation}
+    y_u = \begin{cases} 
+    1 & \text{if } C(u, t+1) \neq C(u, t) \\
+    0 & \text{if } C(u, t+1) = C(u, t) 
+    \end{cases}
+\end{equation}
+
+Features extracted at time $t$ are utilized to predict the state $y_u$ at time $t+1$.
+
+\subsection{Motivation for Community Detection Algorithm Choice}
+To identify distinct user communities within each temporal snapshot, we employ the \textbf{Leiden algorithm}. While sharing the objective
+of modularity maximization with the classical Louvain method, Leiden is selected for its superior stability, scalability, and topological
+guarantees on large-scale networks.
+
+The primary advantage of Leiden over Louvain lies in its handling of community connectivity, scalability and reliability on large networks.
+While Louvain is efficient, it can produce poorly connected or even disconnected communities, Leiden addresses this through a distinct
+\textit{refinement phase}, guaranteeing that all resulting clusters are well-connected. This is critical for our study, as membership in
+a poorly connected cluster could represent an algorithmic artifact rather than genuine social cohesion.
+
+
+Alternative community detection methods were evaluated but rejected due to specific limitations:
+\begin{itemize}
+    \item \textbf{Edge-betweenness (e.g., Girvan–Newman):} Computationally prohibitive with a complexity of $O(|V||E|^2)$, rendering
+    it impractical for our network ($|V| \approx 50k$, $|E| \approx 20M$).
+    \item \textbf{Infomap:} While efficient, it is sensitive to edge weight distributions and tends to generate highly fragmented
+    micro-communities in dense graphs.
+    \item \textbf{Label Propagation:} Although extremely fast, its non-deterministic nature leads to unstable partitions, making
+    longitudinal tracking unreliable.
+\end{itemize}
+
+Leiden combines efficiency, stability, and high-quality partitions. Its near-linear scalability allows us to handle the network effectively,
+while the refinement phase ensures structurally meaningful communities.
+
+Leiden is a hierarchical algorithm, producing a dendrogram of partitions controlled by the resolution parameter $\gamma$.
+\begin{itemize}
+    \item Lower values ($\gamma < 1$) favor larger, macro-communities (e.g., broad genre preferences).
+    \item Higher values ($\gamma > 1$) reveal finer micro-communities (e.g., specific niche groups).
+\end{itemize}
+
+In this study, we fixed $\gamma = 1$. This choice provides a balanced granularity, capturing meaningful community structures without
+merging distinct groups or isolating noise-driven micro-clusters. It also establishes a robust baseline for migration analysis.
+
+To bridge the gap between topology and semantics, we constructed a correlation matrix between the detected user communities and anime
+genre clusters based on historical rating data. The resulting heatmap, complemented by alluvial flow diagrams, reveals which anime
+categories dominate within each user group. This approach allows us to uncover community-specific preference profiles and explore the
+content-driven factors underlying user migration.
+
+\subsection{Feature Engineering}
+To capture the factors driving migration, we constructed a multidimensional feature space describing the user's state at time $t$. The
+feature vector $X_u^{(t)}$ comprises four distinct categories:
+
+\begin{enumerate}
+    \item \textbf{Graph Structure (Global \& Local):} Measures of centrality and influence, including Degree, Weighted Strength, PageRank,
+    and K-core decomposition.
+    \item \textbf{Local Cohesion:} This is captured by the weighted clustering coefficient; low values indicate weak neighborhood integration
+    and a potentially higher migration risk.
+    \item \textbf{Community Embeddedness:} Metrics quantifying the boundary position of a user. Key among these is the
+    \textit{Intra-Community Ratio (ICR)}, defined as the fraction of a user's edges that connect to nodes within the same community.
+    \item \textbf{Temporal Dynamics:} Delta features representing the year-over-year change in structural metrics
+    (e.g., $\Delta \text{Degree}$, $\Delta \text{ICR}$), capturing the trajectory of a user's engagement.
+    \item \textbf{Demographics \& Activity:} Static attributes (gender, age, location) integrated with dynamic indicators, such as
+    the number of watched titles and rating fluctuations over time.
+\end{enumerate}
+
+This results in a comprehensive per-user, per-year feature vector integrating static, structural, and dynamic signals for predictive modeling.
+
+\subsection{Model Specification and Performance Assessment}
+We utilized \textbf{CatBoost}, a gradient boosting algorithm on decision trees, for the classification task. CatBoost was selected for its
+native handling of categorical features (e.g., community ID, location) without one-hot encoding, robustness to missing values and different
+feature scales, and ability to model complex non-linear interactions between structural and behavioral signals. Crucially, it offers native
+support for class imbalance via internal weighting, allowing the algorithm to effectively handle the rarity of migration events.
+
+Considering the task complexity and strong class imbalance (migration events constitute $\approx 17\%$ of the data), the trained model
+demonstrates strong predictive performance. It achieves a \textbf{ROC AUC of 0.915}, indicating strong discrimination capability.
+
+\begin{table}[h]
+\centering
+\caption{Classification Performance Metrics}
+\label{tab:model_performance}
+\begin{tabular}{l c c c}
+\hline
+\textbf{Class} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-Score} \\
+\hline
+Non-Migrant (0) & 0.93 & 0.92 & 0.93 \\
+Migrant (1) & 0.64 & 0.68 & 0.66 \\
+\hline
+\textbf{Overall Accuracy} & \multicolumn{3}{c}{0.88} \\
+\hline
+\end{tabular}
+\end{table}
+
+These results (Table \ref{tab:model_performance}) confirm that user migration is not a stochastic process but a predictable phenomenon driven
+by observable network and behavioral characteristics. This validates the model's utility for early-warning detection, offering threshold
+adjustments to balance recall and precision.
+
+\subsection{Feature Importance and Behavioral Interpretation}
+To explain the model's decisions, we analyzed SHAP (SHapley Additive exPlanations) summary plot. Figure \ref{fig:shap_summary} illustrates
+the global feature importance and directional impact on the prediction.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.9\linewidth]{figures/shap_summary.png}
+    \caption{Distribution of SHAP values indicating the contribution of each feature to the model’s predictions.}
+    \label{fig:shap_summary}
+\end{figure}
+
+The analysis reveals that \textbf{Intra-Community Ratio (ICR)} is the dominant predictor. A high ICR acts as a stabilizing force,
+anchoring the user within their group, whereas a low ICR serves as a strong precursor to migration. Notably, the
+\textit{temporal decrease} in ICR is the most informative early-warning dynamic signal.
+
+The \textbf{current community assignment} itself also has a strong effect, indicating that baseline migration risks differ significantly across
+communities (i.e., some communities are inherently more unstable or "leaky" than others).
+
+\textbf{PageRank} exhibits a non-linear stabilizing effect: highly influential users are less likely to migrate, suggesting that social capital
+creates "inertia." Demographically, older users show lower migration propensities.
+
+These results emphasize that user migration cannot be captured by singular metrics. Only a comprehensive analysis combining network topology,
+temporal changes, and behavioral features reveals the true mechanisms driving community shifts.

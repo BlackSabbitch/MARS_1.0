@@ -51,15 +51,6 @@ These thresholding strategies proved effective in mitigating the "hairball" phen
 exhibited a graph density in the range of $0.2 - 0.3$, striking a balance between sparsity (for efficient clustering) and connectivity
 (preserving the Giant Connected Component).
 
-\subsection{Sparsification and Topology Correction}
-
-To extract the meaningful "backbone" of the network, we applied a multi-stage sparsification pipeline:
-\begin{enumerate}
-    \item \textbf{k-Nearest Neighbors (k-NN):} Restricting node connections to their $k$ strongest peers to preserve local structure.
-    \item \textbf{Disparity Filter (Backbone):} Extracting statistically significant edges to retain multiscale structure while discarding
-    random noise.
-\end{enumerate}
-
 Only after these topological corrections is the graph subjected to the Leiden community detection algorithm and Random Walk simulations.
 
 \subsection{Computational Framework and Reproducibility}
