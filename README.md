@@ -3,10 +3,13 @@ Manga and Anime Research Service (study project)
 
 ---
 
-Comprehensive Python project for managing, cleaning, and analyzing large datasets related to anime, users, and cities.
-Includes pipelines for dataset preprocessing, user-anime interactions, and analytical scripts for generating insights and visualizations.
-The project also provides modules for database operations (MongoDB, MySQL), graph-based analysis, and reporting.
-All datasets should be placed in the data/ directory before running any scripts or notebooks.
+**MARS_1.0** is a comprehensive Python framework designed for the management, preprocessing, and analysis of large-scale anime viewership data.
+
+This project integrates pipelines for data cleaning, user-interaction modeling, and complex graph-based analysis to derive insights
+into community evolution. It features dedicated modules for database management (MongoDB, MySQL), machine learning experiments,
+and automated reporting.
+
+> **Note:** External datasets must be manually placed in the `data/` directory prior to execution (see Project Structure below).
 
 ---
 
@@ -14,25 +17,30 @@ All datasets should be placed in the data/ directory before running any scripts 
 
 ```
 MARS_1.0/
-├── data/                                           # non-code data
-│   ├── datasets/                                   # original and self-made datasets
-│   │   ├── anime_azathoth42/                       # (unpacked) https://www.kaggle.com/datasets/azathoth42/myanimelist (2018)
-│   │   ├── anime_hernan4444/                       # (unpacked) https://www.kaggle.com/datasets/hernan4444/anime-recommendations-database (2020)
-│   │   ├── cities_population_and_location/         # (unpacked) https://www.kaggle.com/datasets/donatoriccio/world-cities-population-cleaned-version (2022)
-│   │   └── myanimelist_countries_distribution/     # (self-made)  https://www.semrush.com/analytics/organic/changes/?sortField=traffic&db=us&q=myanimelist.net&searchType=domain (2025)
-│   ├── graphs/                                     # graph raw files
-│   └── helpers/                                    # JSON, CSV - helpers, temporary files
-├── project_cda/                                    # CDA project code
-├── project_db/                                     # ADB project code
-├── project_fds/                                    # FDS project code
-├── setup.py
-├── requirements.txt
-├── pyproject.toml
-├── __init__.py
+├── data/                                   # Non-code assets (ignored by git)
+│   ├── datasets/                           # Original and processed datasets
+│   │   ├── anime_azathoth42/               # [Source] Kaggle: myanimelist (2018)
+│   │   ├── anime_hernan4444/               # [Source] Kaggle: anime-recommendations-database (2020)
+│   │   ├── cities_population.../           # [Source] Kaggle: world-cities-population-cleaned (2022)
+│   │   └── myanimelist_countries.../       # [Self-made] SEMRush traffic distribution (2025)
+│   ├── experiments/                        # Experiment outputs: metrics, visualizations, partitions
+│   │   ├── users/
+│   │   └── anime/
+│   │       └── ...                         # e.g., community detection results (html, csv)
+│   ├── graphs/                             # Serialized graph objects (Pickle/NetworkX)
+│   │   ├── anime/
+│   │   │   ├── raw/                        # Initial graph snapshots
+│   │   │   └── sparse/                     # Sparsified backbones (e.g., Disparity Filter)
+│   │   └── helpers/                        # Temporary intermediate files
+├── datasets.json                           # Configuration file for dataset paths and metadata
+├── project_cda/                            # Code: Community detection analysis module
+├── project_db/                             # Code: Database implementations module
+├── project_fds/                            # Code: Preprocessing and common ML module
+├── reports_latex/                          # LaTeX source code for generated project reports
+├── requirements.txt                        # Python dependencies
+├── setup.py                                # Package installer script
 └── README.md
 ```
-
-
 
 ## Setup
 
